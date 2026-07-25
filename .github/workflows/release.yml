@@ -1,0 +1,113 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  release:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Compute version
+        id: version
+        run: |
+          BRANCH="${GITHUB_REF_NAME:-main}"
+          BUILD_NUMBER="${{ github.run_number }}"
+          if [[ "$BRANCH" =~ ^release/([0-9]+\.[0-9]+)$ ]]; then
+            VERSION_NAME="${BASH_REMATCH[1]}.${BUILD_NUMBER}"
+          else
+            VERSION_NAME="1.0.${BUILD_NUMBER}"
+          fi
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "VERSION_CODE=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::REDACTED_ACCOUNT_ID:role/GitHubActionsRole
+          aws-region: eu-west-1
+
+      - name: Decode keystore
+        run: |
+          KEYSTORE_B64=$(jq -r '.keystore' deployment/android-upload-signing.json)
+          echo "$KEYSTORE_B64" | base64 -d > /tmp/upload.keystore
+
+      - name: Decrypt signing password
+        id: signing
+        run: |
+          CIPHER_B64=$(jq -r '.passwordCiphertext' deployment/android-upload-signing.json)
+          PASSWORD=$(echo "$CIPHER_B64" | base64 -d | aws kms decrypt --region eu-west-1 --ciphertext-blob fileb:///dev/stdin --output text --query Plaintext | base64 -d)
+          echo "::add-mask::$PASSWORD"
+          echo "STORE_PASSWORD=$PASSWORD" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed AAB
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.VERSION_NAME }}
+          VERSION_CODE: ${{ steps.version.outputs.VERSION_CODE }}
+          STORE_PASSWORD: ${{ steps.signing.outputs.STORE_PASSWORD }}
+        run: |
+          ./gradlew bundleRelease \
+            -PversionName="$VERSION_NAME" \
+            -PversionCode="$VERSION_CODE" \
+            -Pandroid.injected.signing.store.file=/tmp/upload.keystore \
+            -Pandroid.injected.signing.store.password="$STORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias=email \
+            -Pandroid.injected.signing.key.password="$STORE_PASSWORD"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Get OIDC token for GCP
+        id: gcp_token
+        run: |
+          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://token.actions.githubusercontent.com" | jq -r '.value')
+          echo "$TOKEN" > /tmp/gcp-oidc.jwt
+
+      - name: Configure GCP credentials
+        run: |
+          cat > /tmp/gcp-credentials.json << 'EOF'
+          {"type":"external_account","audience":"//iam.googleapis.com/projects/454629444494/locations/global/workloadIdentityPools/gitlab-oidc/providers/github-com","subject_token_type":"urn:ietf:params:oauth:token-type:id_token","token_url":"https://sts.googleapis.com/v1/token","credential_source":{"file":"/tmp/gcp-oidc.jwt"},"service_account_impersonation_url":"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/gitlab-play-store@rhosys-apps.iam.gserviceaccount.com:generateAccessToken"}
+          EOF
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-credentials.json" >> "$GITHUB_ENV"
+
+      - name: Deploy to Play Store
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION_NAME }}
+        run: npm run deploy:play-store
+
+      - name: Notify Discord
+        env:
+          DISCORD_RHOSYS_CI_CD_CHANNEL_WEBHOOK: ${{ secrets.DISCORD_RHOSYS_CI_CD_CHANNEL_WEBHOOK }}
+        run: npm run deploy:notify -- --version-code "${{ steps.version.outputs.VERSION_CODE }}" --version-name "${{ steps.version.outputs.VERSION_NAME }}"
+
+      - name: Set timestamp
+        id: ts
+        run: echo "iso=$(date -u +%Y%m%dT%H%M%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-release-${{ steps.ts.outputs.iso }}
+          path: app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30
