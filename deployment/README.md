@@ -23,7 +23,7 @@ npx tsx 004-secrets/scripts/generate-android-keystore.ts --alias email --origin 
 | Field | Description |
 |-------|-------------|
 | `keystore` | Base64-encoded PKCS12 file. RSA 4096-bit key, 10950-day validity, DN `CN=rhosys.ch, O=Rhosys AG, OU=Mobile, L=Unknown, ST=Unknown, C=CH`. |
-| `passwordCiphertext` | Base64-encoded ciphertext produced by AWS KMS (`alias/deployment-encryption-key` in account `REDACTED_ACCOUNT_ID`, region `eu-west-1`). Decrypted at build time via OIDC role assumption. |
+| `passwordCiphertext` | Base64-encoded ciphertext produced by AWS KMS (`alias/deployment-encryption-key`, region `eu-west-1`). Decrypted at build time via OIDC role assumption. |
 
 ### How CI uses this file
 
