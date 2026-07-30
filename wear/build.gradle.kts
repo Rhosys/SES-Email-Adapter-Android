@@ -58,7 +58,6 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.wear.compose.material)
     implementation(libs.wear.compose.foundation)
-    implementation(libs.wear.input)
     implementation(libs.play.services.wearable)
 
     debugImplementation(libs.compose.ui.tooling)
