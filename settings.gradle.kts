@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "email-android-mobile-app"
 include(":app")
+include(":wear")
