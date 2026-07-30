@@ -40,6 +40,9 @@ android {
         )
 
         manifestPlaceholders["oauthRedirectScheme"] = "ch.rhosys.email"
+        // Required by the AppAuth library's own manifest (RedirectUriReceiverActivity),
+        // even though our redirect is actually captured by MainActivity's intent-filter below.
+        manifestPlaceholders["appAuthRedirectScheme"] = "ch.rhosys.email"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
