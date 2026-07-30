@@ -1,5 +1,6 @@
 package ch.rhosys.email.presentation.inbox
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -96,7 +97,7 @@ fun InboxScreen(onThreadClick: (String) -> Unit) {
  * Swipe reveals a popup-style action row (archive / delay / delete / label),
  * matching decision #17. Long-press enters bulk multi-select (decision #19).
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun InboxRow(
     thread: MailThread,

@@ -1,5 +1,6 @@
 package ch.rhosys.email.presentation.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -142,7 +143,7 @@ private fun AppPreferencesSection(
 }
 
 private fun Modifier.clickableSettings(onClick: () -> Unit): Modifier =
-    this.then(androidx.compose.foundation.clickable(onClick = onClick))
+    this.clickable(onClick = onClick)
 
 @Composable
 private fun AliasesTab(uiState: SettingsUiState) {

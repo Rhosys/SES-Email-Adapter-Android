@@ -5,8 +5,10 @@ import androidx.paging.ExperimentalPagingApi
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
+import androidx.paging.map
 import ch.rhosys.email.data.local.EmailDatabase
 import ch.rhosys.email.data.local.entity.toDomain
+import ch.rhosys.email.data.local.entity.toEntity
 import ch.rhosys.email.data.remote.api.EmailApiService
 import ch.rhosys.email.data.remote.dto.MoveThreadRequest
 import ch.rhosys.email.domain.model.Attachment
@@ -58,7 +60,7 @@ class ThreadRepositoryImpl(
                     .getOrDefault(ch.rhosys.email.domain.model.WorkflowType.NONE),
                 workflowFields = dto.workflowFields,
                 isBlockedSender = dto.isBlockedSender, unsubscribeUrl = dto.unsubscribeUrl,
-            ).let { ch.rhosys.email.data.local.entity.toEntity(it) }
+            ).toEntity()
         })
     }
 
@@ -72,7 +74,7 @@ class ThreadRepositoryImpl(
                 deliveryStatus = runCatching { ch.rhosys.email.domain.model.DeliveryStatus.valueOf(dto.deliveryStatus) }
                     .getOrDefault(ch.rhosys.email.domain.model.DeliveryStatus.SENT),
                 attachments = emptyList(),
-            ).let { ch.rhosys.email.data.local.entity.toEntity(it) }
+            ).toEntity()
         })
         messages.forEach { dto ->
             messageDao.upsertAttachments(dto.attachments.map { a ->

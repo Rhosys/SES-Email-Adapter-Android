@@ -59,8 +59,7 @@ fun TemplatesScreen(onUseTemplate: (Template) -> Unit) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp)
-                        .then(Modifier),
+                        .padding(12.dp),
                 ) {
                     Text(template.name, style = MaterialTheme.typography.titleMedium)
                     Text(template.subject, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
