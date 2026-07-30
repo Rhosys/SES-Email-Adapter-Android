@@ -1,11 +1,14 @@
 package ch.rhosys.email.sync
 
+import android.Manifest
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import ch.rhosys.email.EmailApp
 import ch.rhosys.email.R
 import ch.rhosys.email.domain.repository.ComposeRepository
@@ -75,7 +78,9 @@ class PendingSendManager(private val context: Context, private val composeReposi
             .setTimeoutAfter(8_000L)
             .setAutoCancel(true)
             .build()
-        notificationManager.notify(id.hashCode(), notification)
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            notificationManager.notify(id.hashCode(), notification)
+        }
     }
 
     companion object {
