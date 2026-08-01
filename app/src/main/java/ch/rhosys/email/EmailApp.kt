@@ -2,16 +2,22 @@ package ch.rhosys.email
 
 import android.app.Application
 import android.util.Log
+import ch.rhosys.email.di.AppContainer
+import ch.rhosys.email.notification.NotificationChannels
 import com.posthog.PostHog
 import com.posthog.android.PostHogAndroid
 import com.posthog.android.PostHogAndroidConfig
-import dagger.hilt.android.HiltAndroidApp
 
-@HiltAndroidApp
 class EmailApp : Application() {
+
+    lateinit var appContainer: AppContainer
+        private set
+
     override fun onCreate() {
         super.onCreate()
+        appContainer = AppContainer(this)
         installCrashHandler()
+        NotificationChannels.registerAll(this)
 
         try {
             initPostHog()

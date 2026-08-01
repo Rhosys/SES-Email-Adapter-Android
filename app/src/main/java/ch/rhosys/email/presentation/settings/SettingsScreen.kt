@@ -1,0 +1,216 @@
+package ch.rhosys.email.presentation.settings
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import ch.rhosys.email.di.LocalAppContainer
+import ch.rhosys.email.presentation.components.rememberViewModel
+import ch.rhosys.email.ui.theme.CatppuccinFlavor
+
+@Composable
+fun SettingsScreen(
+    onNavigateStats: () -> Unit,
+    onNavigateBilling: () -> Unit,
+    onNavigateSupport: () -> Unit,
+    onNavigateAdmin: () -> Unit,
+    onSignedOut: () -> Unit,
+) {
+    val container = LocalAppContainer.current
+    val viewModel = rememberViewModel {
+        SettingsViewModel(container.settingsRepository, container.accountRepository, container.preferencesStore, container.authManager)
+    }
+    val uiState by viewModel.uiState.collectAsState()
+    var tabIndex by remember { mutableStateOf(0) }
+    var showSignOutConfirm by remember { mutableStateOf(false) }
+    val tabs = listOf("Aliases", "Email & Forwarding", "Profile & Security", "Team")
+
+    LaunchedEffect(tabIndex) {
+        when (tabIndex) {
+            1 -> viewModel.loadForwardingAndDns()
+            2, 3 -> viewModel.loadSecurityAndTeam()
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        AppPreferencesSection(
+            uiState = uiState,
+            onThemeSelected = viewModel::setThemeFlavor,
+            onBiometricToggle = viewModel::setBiometricLockEnabled,
+            onAdminToggle = viewModel::setAdminPanelEnabled,
+            onNavigateStats = onNavigateStats,
+            onNavigateBilling = onNavigateBilling,
+            onNavigateSupport = onNavigateSupport,
+            onNavigateAdmin = onNavigateAdmin,
+            onSignOutClick = { showSignOutConfirm = true },
+        )
+        HorizontalDivider()
+        TabRow(selectedTabIndex = tabIndex) {
+            tabs.forEachIndexed { index, title ->
+                Tab(selected = tabIndex == index, onClick = { tabIndex = index }, text = { Text(title) })
+            }
+        }
+        when (tabIndex) {
+            0 -> AliasesTab(uiState)
+            1 -> ForwardingTab(uiState, onVerifyDns = viewModel::verifyDns, onAddForwarding = viewModel::addForwardingAddress, onRemoveForwarding = viewModel::removeForwardingAddress)
+            2 -> SecurityTab(uiState, onRemoveMfa = viewModel::removeMfaDevice)
+            3 -> TeamTab(uiState)
+        }
+    }
+
+    if (showSignOutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSignOutConfirm = false },
+            title = { Text("Sign out?") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.signOut(); showSignOutConfirm = false; onSignedOut() }) { Text("Sign out") }
+            },
+            dismissButton = { TextButton(onClick = { showSignOutConfirm = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun AppPreferencesSection(
+    uiState: SettingsUiState,
+    onThemeSelected: (CatppuccinFlavor?) -> Unit,
+    onBiometricToggle: (Boolean) -> Unit,
+    onAdminToggle: (Boolean) -> Unit,
+    onNavigateStats: () -> Unit,
+    onNavigateBilling: () -> Unit,
+    onNavigateSupport: () -> Unit,
+    onNavigateAdmin: () -> Unit,
+    onSignOutClick: () -> Unit,
+) {
+    Column(modifier = Modifier.padding(12.dp)) {
+        Text("Theme", style = MaterialTheme.typography.titleMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
+            CatppuccinFlavor.entries.forEach { flavor ->
+                FilterChip(
+                    selected = uiState.themeFlavor == flavor,
+                    onClick = { onThemeSelected(if (uiState.themeFlavor == flavor) null else flavor) },
+                    label = { Text(flavor.label) },
+                )
+            }
+        }
+        ListItem(
+            headlineContent = { Text("Biometric lock") },
+            supportingContent = { Text("Require Face/Fingerprint unlock to open the app") },
+            trailingContent = { Switch(checked = uiState.biometricLockEnabled, onCheckedChange = onBiometricToggle) },
+        )
+        ListItem(
+            headlineContent = { Text("Admin panel") },
+            supportingContent = { Text("Show Signal Inspector, health check, and reprocess tools") },
+            trailingContent = { Switch(checked = uiState.adminPanelEnabled, onCheckedChange = onAdminToggle) },
+        )
+        if (uiState.adminPanelEnabled) {
+            ListItem(headlineContent = { Text("Open admin panel") }, modifier = Modifier.clickableSettings(onNavigateAdmin))
+        }
+        ListItem(headlineContent = { Text("Stats") }, modifier = Modifier.clickableSettings(onNavigateStats))
+        ListItem(headlineContent = { Text("Billing") }, modifier = Modifier.clickableSettings(onNavigateBilling))
+        ListItem(headlineContent = { Text("Support") }, modifier = Modifier.clickableSettings(onNavigateSupport))
+        ListItem(
+            headlineContent = { Text("Sign out", color = MaterialTheme.colorScheme.error) },
+            modifier = Modifier.clickableSettings(onSignOutClick),
+        )
+    }
+}
+
+private fun Modifier.clickableSettings(onClick: () -> Unit): Modifier =
+    this.clickable(onClick = onClick)
+
+@Composable
+private fun AliasesTab(uiState: SettingsUiState) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        items(uiState.aliases, key = { it.id }) { alias ->
+            ListItem(
+                headlineContent = { Text(alias.emailAddress) },
+                supportingContent = { Text(if (alias.isDefault) "Default alias" else "Alias") },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ForwardingTab(
+    uiState: SettingsUiState,
+    onVerifyDns: () -> Unit,
+    onAddForwarding: (String) -> Unit,
+    onRemoveForwarding: (String) -> Unit,
+) {
+    var newAddress by remember { mutableStateOf("") }
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+        item { Text("DNS records", style = MaterialTheme.typography.titleMedium) }
+        items(uiState.dnsRecords) { record ->
+            ListItem(
+                headlineContent = { Text("${record.type} — ${record.name}") },
+                supportingContent = { Text(record.value, maxLines = 1) },
+                trailingContent = { Text(if (record.isVerified) "Verified" else "Pending") },
+            )
+        }
+        item { TextButton(onClick = onVerifyDns) { Text("Re-check verification") } }
+        item { Text("Forwarding addresses", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp)) }
+        items(uiState.forwardingAddresses, key = { it.id }) { address ->
+            ListItem(
+                headlineContent = { Text(address.emailAddress) },
+                supportingContent = { Text(if (address.isVerified) "Verified" else "Pending verification") },
+                trailingContent = { TextButton(onClick = { onRemoveForwarding(address.id) }) { Text("Remove") } },
+            )
+        }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextField(value = newAddress, onValueChange = { newAddress = it }, label = { Text("Add address") }, modifier = Modifier.weight(1f))
+                TextButton(onClick = { if (newAddress.isNotBlank()) { onAddForwarding(newAddress); newAddress = "" } }) { Text("Add") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SecurityTab(uiState: SettingsUiState, onRemoveMfa: (String) -> Unit) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item { Text("MFA devices", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(12.dp)) }
+        items(uiState.mfaDevices, key = { it.id }) { device ->
+            ListItem(
+                headlineContent = { Text(device.label) },
+                supportingContent = { Text(device.type) },
+                trailingContent = { TextButton(onClick = { onRemoveMfa(device.id) }) { Text("Remove") } },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TeamTab(uiState: SettingsUiState) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        items(uiState.teamMembers, key = { it.id }) { member ->
+            ListItem(headlineContent = { Text(member.emailAddress) }, supportingContent = { Text(member.role) })
+        }
+    }
+}

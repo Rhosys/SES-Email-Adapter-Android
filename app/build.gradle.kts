@@ -2,7 +2,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
 }
 
@@ -12,10 +11,40 @@ android {
 
     defaultConfig {
         applicationId = "ch.rhosys.email"
-        minSdk = 26
+        minSdk = 31
         targetSdk = 35
         versionCode = (findProperty("versionCode") as? String)?.toIntOrNull() ?: 1
         versionName = (findProperty("versionName") as? String) ?: "1.0.0"
+
+        // Backend shared with the Numaeel web app (SES-Email-Adapter-UI). Override
+        // per-environment via gradle.properties / -P flags in CI.
+        buildConfigField(
+            "String",
+            "API_BASE_URL",
+            "\"${(findProperty("apiBaseUrl") as? String) ?: "https://api.numaeel.com/"}\"",
+        )
+        buildConfigField(
+            "String",
+            "AUTHRESS_CUSTOM_DOMAIN",
+            "\"${(findProperty("authressDomain") as? String) ?: "login.numaeel.com"}\"",
+        )
+        buildConfigField(
+            "String",
+            "AUTHRESS_APPLICATION_ID",
+            "\"${(findProperty("authressApplicationId") as? String) ?: "numaeel_android"}\"",
+        )
+        buildConfigField(
+            "String",
+            "OAUTH_REDIRECT_SCHEME",
+            "\"ch.rhosys.email\"",
+        )
+
+        manifestPlaceholders["oauthRedirectScheme"] = "ch.rhosys.email"
+        // Required by the AppAuth library's own manifest (RedirectUriReceiverActivity),
+        // even though our redirect is actually captured by MainActivity's intent-filter below.
+        manifestPlaceholders["appAuthRedirectScheme"] = "ch.rhosys.email"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -29,7 +58,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("sharedDebug")
         }
         debug {
@@ -46,28 +77,86 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime)
+    implementation(libs.androidx.lifecycle.viewmodel)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons)
+    implementation(libs.compose.foundation)
+    implementation(libs.navigation.compose)
+    implementation(libs.kotlinx.coroutines.android)
 
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    implementation(libs.room.paging)
+    ksp(libs.room.compiler)
+
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.moshi)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
+    implementation(libs.moshi)
+    ksp(libs.moshi.kotlin)
+
+    implementation(libs.coil.compose)
+
+    implementation(libs.markwon.core)
+    implementation(libs.markwon.ext.strikethrough)
+    implementation(libs.markwon.linkify)
+
+    implementation(libs.paging.runtime)
+    implementation(libs.paging.compose)
+
+    implementation(libs.security.crypto)
+    implementation(libs.biometric)
+    implementation(libs.appauth)
+
+    implementation(libs.glance.appwidget)
+    implementation(libs.glance.material3)
+
+    implementation(libs.datastore.preferences)
 
     implementation(libs.posthog.android)
 
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+
     debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
+    testImplementation(libs.junit5.jupiter)
+    testImplementation(libs.mockk)
+    testImplementation(libs.kotlinx.coroutines.test)
+
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.compose.ui.test.junit4)
 }
