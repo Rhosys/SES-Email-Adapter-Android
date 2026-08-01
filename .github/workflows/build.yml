@@ -117,13 +117,11 @@ jobs:
         run: npm run deploy:play-store
 
       - name: Notify Discord
-        if: always()
         env:
           DISCORD_RHOSYS_CI_CD_CHANNEL_WEBHOOK: ${{ secrets.DISCORD_RHOSYS_CI_CD_CHANNEL_WEBHOOK }}
         run: npm run deploy:notify -- --version-code "${{ steps.version.outputs.VERSION_CODE }}" --version-name "${{ steps.version.outputs.VERSION_NAME }}"
 
       - name: Upload AAB
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: app-release-${{ github.run_number }}

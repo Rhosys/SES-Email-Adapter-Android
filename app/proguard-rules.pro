@@ -7,3 +7,6 @@
 -keep @com.squareup.moshi.JsonClass class * { *; }
 -dontwarn okhttp3.internal.platform.**
 -dontwarn org.conscrypt.**
+
+# Tink (via security-crypto) references errorprone annotations that are compile-only
+-dontwarn com.google.errorprone.annotations.**
