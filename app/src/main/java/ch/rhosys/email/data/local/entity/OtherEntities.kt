@@ -4,67 +4,138 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverters
 import ch.rhosys.email.data.local.Converters
-import ch.rhosys.email.domain.model.Draft
 import ch.rhosys.email.domain.model.Label
 import ch.rhosys.email.domain.model.Rule
+import ch.rhosys.email.domain.model.RuleAction
+import ch.rhosys.email.domain.model.RuleActionType
 import ch.rhosys.email.domain.model.Template
+import ch.rhosys.email.domain.model.View
+import ch.rhosys.email.domain.model.Workflow
+import java.time.Instant
+
+/**
+ * There is no drafts table: a draft is a signal with status "draft", cached in
+ * [SignalEntity] alongside every other signal on its thread.
+ */
 
 @Entity(tableName = "labels")
 data class LabelEntity(
-    @PrimaryKey val id: String,
+    @PrimaryKey val label: String,
     val accountId: String,
     val name: String,
-    val color: String,
-    val emoji: String?,
-)
-
-@Entity(tableName = "drafts")
-@TypeConverters(Converters::class)
-data class DraftEntity(
-    @PrimaryKey val id: String,
-    val accountId: String,
-    val threadId: String?,
-    val fromAlias: String,
-    val toAddresses: List<String>,
-    val ccAddresses: List<String>,
-    val bccAddresses: List<String>,
-    val subject: String,
-    val bodyMarkdown: String,
-    val updatedAt: Long,
-    val isPendingSync: Boolean = false,
+    val color: String?,
+    val icon: String?,
+    val createdAt: Long?,
 )
 
 @Entity(tableName = "rules")
+@TypeConverters(Converters::class)
 data class RuleEntity(
-    @PrimaryKey val id: String,
+    @PrimaryKey val ruleId: String,
     val accountId: String,
     val name: String,
-    val description: String,
+    val condition: String?,
+    val conditionType: String?,
+    /** Serialized as "type=value" pairs; see [Converters.fromStringList]. */
+    val actions: List<String>,
     val isEnabled: Boolean,
+    val priorityOrder: Double,
+    val isImmutable: Boolean,
 )
 
 @Entity(tableName = "templates")
 data class TemplateEntity(
-    @PrimaryKey val id: String,
+    @PrimaryKey val templateId: String,
     val accountId: String,
     val name: String,
     val subject: String,
-    val bodyMarkdown: String,
+    val body: String,
 )
 
-fun LabelEntity.toDomain() = Label(id, accountId, name, color, emoji)
-fun Label.toEntity() = LabelEntity(id, accountId, name, color, emoji)
-
-fun DraftEntity.toDomain() = Draft(
-    id, accountId, threadId, fromAlias, toAddresses, ccAddresses, bccAddresses, subject, bodyMarkdown, updatedAt,
+@Entity(tableName = "views")
+@TypeConverters(Converters::class)
+data class ViewEntity(
+    @PrimaryKey val viewId: String,
+    val accountId: String,
+    val name: String,
+    val icon: String?,
+    val color: String?,
+    val workflow: String?,
+    val labels: List<String>,
+    val position: Double,
 )
-fun Draft.toEntity(isPendingSync: Boolean = false) = DraftEntity(
-    id, accountId, threadId, fromAlias, toAddresses, ccAddresses, bccAddresses, subject, bodyMarkdown, updatedAt,
-    isPendingSync,
+
+fun LabelEntity.toDomain() = Label(
+    label = label,
+    accountId = accountId,
+    name = name,
+    color = color,
+    icon = icon,
+    createdAt = createdAt?.let(Instant::ofEpochMilli),
 )
 
-fun RuleEntity.toDomain() = Rule(id, accountId, name, description, isEnabled)
-fun Rule.toEntity() = RuleEntity(id, accountId, name, description, isEnabled)
+fun Label.toEntity() = LabelEntity(
+    label = label,
+    accountId = accountId,
+    name = name,
+    color = color,
+    icon = icon,
+    createdAt = createdAt?.toEpochMilli(),
+)
 
-fun TemplateEntity.toDomain() = Template(id, accountId, name, subject, bodyMarkdown)
-fun Template.toEntity() = TemplateEntity(id, accountId, name, subject, bodyMarkdown)
+private fun encodeAction(a: RuleAction) = "${a.type.wire}=${a.value.orEmpty()}"
+
+private fun decodeAction(raw: String): RuleAction {
+    val type = raw.substringBefore('=')
+    val value = raw.substringAfter('=', "").takeIf { it.isNotEmpty() }
+    return RuleAction(RuleActionType.fromWire(type), value)
+}
+
+fun RuleEntity.toDomain() = Rule(
+    ruleId = ruleId,
+    accountId = accountId,
+    name = name,
+    condition = condition,
+    conditionType = conditionType,
+    actions = actions.map(::decodeAction),
+    isEnabled = isEnabled,
+    priorityOrder = priorityOrder,
+    isImmutable = isImmutable,
+)
+
+fun Rule.toEntity() = RuleEntity(
+    ruleId = ruleId,
+    accountId = accountId,
+    name = name,
+    condition = condition,
+    conditionType = conditionType,
+    actions = actions.map(::encodeAction),
+    isEnabled = isEnabled,
+    priorityOrder = priorityOrder,
+    isImmutable = isImmutable,
+)
+
+fun TemplateEntity.toDomain() = Template(templateId, accountId, name, subject, body)
+fun Template.toEntity() = TemplateEntity(templateId, accountId, name, subject, body)
+
+fun ViewEntity.toDomain() = View(
+    viewId = viewId,
+    accountId = accountId,
+    name = name,
+    icon = icon,
+    color = color,
+    workflow = workflow?.let(Workflow::fromWire),
+    labels = labels,
+    position = position,
+)
+
+fun View.toEntity() = ViewEntity(
+    viewId = viewId,
+    accountId = accountId,
+    name = name,
+    icon = icon,
+    color = color,
+    workflow = workflow?.wire,
+    labels = labels,
+    position = position,
+)

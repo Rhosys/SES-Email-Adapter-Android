@@ -4,63 +4,72 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverters
 import ch.rhosys.email.data.local.Converters
-import ch.rhosys.email.domain.model.Folder
+import ch.rhosys.email.domain.model.EmailAddress
 import ch.rhosys.email.domain.model.MailThread
-import ch.rhosys.email.domain.model.WorkflowType
+import ch.rhosys.email.domain.model.ThreadStatus
+import ch.rhosys.email.domain.model.Urgency
+import ch.rhosys.email.domain.model.Workflow
+import java.time.Instant
 
+/**
+ * Cached thread row. Timestamps are stored as epoch millis for cheap sorting;
+ * they arrive from the backend as ISO-8601 strings and are converted at the
+ * repository boundary.
+ */
 @Entity(tableName = "threads")
 @TypeConverters(Converters::class)
 data class ThreadEntity(
-    @PrimaryKey val id: String,
+    @PrimaryKey val threadId: String,
     val accountId: String,
     val subject: String,
-    val snippet: String,
-    val participants: List<String>,
-    val lastMessageAt: Long,
-    val isRead: Boolean,
-    val folder: String,
-    val labelIds: List<String>,
+    val summary: String,
+    val senderAddress: String,
+    val senderName: String?,
+    val recipientAddress: String,
+    val workflow: String,
+    val status: String,
+    val urgency: String,
+    val labels: List<String>,
+    val lastSignalAt: Long?,
     val followupAt: Long?,
-    val workflowType: String,
-    val workflowFields: Map<String, String> = emptyMap(),
-    val isBlockedSender: Boolean,
-    val unsubscribeUrl: String?,
-    /** True while an offline-queued mutation (archive/delete/label) awaits sync. */
+    val createdAt: Long?,
+    val updatedAt: Long?,
     val isPendingSync: Boolean = false,
-    val updatedAt: Long = lastMessageAt,
 )
 
 fun ThreadEntity.toDomain() = MailThread(
-    id = id,
+    threadId = threadId,
     accountId = accountId,
     subject = subject,
-    snippet = snippet,
-    participants = participants,
-    lastMessageAt = lastMessageAt,
-    isRead = isRead,
-    folder = Folder.valueOf(folder),
-    labelIds = labelIds,
-    followupAt = followupAt,
-    workflowType = runCatching { WorkflowType.valueOf(workflowType) }.getOrDefault(WorkflowType.NONE),
-    workflowFields = workflowFields,
-    isBlockedSender = isBlockedSender,
-    unsubscribeUrl = unsubscribeUrl,
+    summary = summary,
+    sender = EmailAddress(senderAddress, senderName),
+    recipientAddress = recipientAddress,
+    workflow = Workflow.fromWire(workflow),
+    status = ThreadStatus.fromWire(status),
+    urgency = Urgency.fromWire(urgency),
+    labels = labels,
+    lastSignalAt = lastSignalAt?.let(Instant::ofEpochMilli),
+    followupAt = followupAt?.let(Instant::ofEpochMilli),
+    createdAt = createdAt?.let(Instant::ofEpochMilli),
+    updatedAt = updatedAt?.let(Instant::ofEpochMilli),
+    isPendingSync = isPendingSync,
 )
 
-fun MailThread.toEntity(isPendingSync: Boolean = false) = ThreadEntity(
-    id = id,
+fun MailThread.toEntity(isPendingSync: Boolean = this.isPendingSync) = ThreadEntity(
+    threadId = threadId,
     accountId = accountId,
     subject = subject,
-    snippet = snippet,
-    participants = participants,
-    lastMessageAt = lastMessageAt,
-    isRead = isRead,
-    folder = folder.name,
-    labelIds = labelIds,
-    followupAt = followupAt,
-    workflowType = workflowType.name,
-    workflowFields = workflowFields,
-    isBlockedSender = isBlockedSender,
-    unsubscribeUrl = unsubscribeUrl,
+    summary = summary,
+    senderAddress = sender.address,
+    senderName = sender.name,
+    recipientAddress = recipientAddress,
+    workflow = workflow.wire,
+    status = status.wire,
+    urgency = urgency.wire,
+    labels = labels,
+    lastSignalAt = lastSignalAt?.toEpochMilli(),
+    followupAt = followupAt?.toEpochMilli(),
+    createdAt = createdAt?.toEpochMilli(),
+    updatedAt = updatedAt?.toEpochMilli(),
     isPendingSync = isPendingSync,
 )
