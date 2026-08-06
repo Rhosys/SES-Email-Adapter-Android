@@ -1,37 +1,45 @@
 package ch.rhosys.email.data.repository
 
 import ch.rhosys.email.data.remote.api.EmailApiService
-import ch.rhosys.email.domain.model.DnsRecord
-import ch.rhosys.email.domain.model.ForwardingAddress
-import ch.rhosys.email.domain.model.MfaDevice
-import ch.rhosys.email.domain.model.PlanInfo
-import ch.rhosys.email.domain.model.TeamMember
+import ch.rhosys.email.data.remote.dto.AccountUserDto
+import ch.rhosys.email.data.remote.dto.CreateForwardingTargetRequest
+import ch.rhosys.email.data.remote.dto.DnsRecordDto
+import ch.rhosys.email.data.remote.dto.DomainDto
+import ch.rhosys.email.data.remote.dto.ForwardingTargetDto
 
-/** Backs Settings' 4 tabs (decision #45), DNS/forwarding/MFA management (#46-48), and billing view (#42). */
+/**
+ * Backs the settings screens against what the API actually exposes.
+ *
+ * Removed, because the API provides no endpoints for them: MFA and passkey
+ * device management, and the billing/plan view. `billingPlan` is readable on the
+ * account for display, but there is nothing to manage.
+ *
+ * What the app called "DNS records" is the domains resource; records come back
+ * on a single domain, not on the account.
+ */
 class SettingsRepository(private val api: EmailApiService) {
-    suspend fun getDnsRecords(accountId: String): List<DnsRecord> =
-        api.getDnsRecords(accountId).map { DnsRecord(it.type, it.name, it.value, it.isVerified) }
 
-    suspend fun verifyDnsRecords(accountId: String): List<DnsRecord> =
-        api.verifyDnsRecords(accountId).map { DnsRecord(it.type, it.name, it.value, it.isVerified) }
+    suspend fun getDomains(accountId: String): List<DomainDto> =
+        api.getDomains(accountId).domains
 
-    suspend fun getForwardingAddresses(accountId: String): List<ForwardingAddress> =
-        api.getForwardingAddresses(accountId).map { ForwardingAddress(it.id, it.emailAddress, it.isVerified) }
+    /** DNS records hang off an individual domain. */
+    suspend fun getDomainRecords(accountId: String, domainId: String): List<DnsRecordDto> =
+        api.getDomain(accountId, domainId).records
 
-    suspend fun addForwardingAddress(accountId: String, emailAddress: String): ForwardingAddress =
-        api.addForwardingAddress(accountId, mapOf("emailAddress" to emailAddress))
-            .let { ForwardingAddress(it.id, it.emailAddress, it.isVerified) }
+    suspend fun getForwardingTargets(accountId: String): List<ForwardingTargetDto> =
+        api.getForwardingTargets(accountId).forwardingTargets
 
-    suspend fun removeForwardingAddress(id: String) = api.removeForwardingAddress(id)
+    suspend fun addForwardingTarget(accountId: String, target: String): ForwardingTargetDto =
+        api.addForwardingTarget(accountId, CreateForwardingTargetRequest(target, type = "email"))
 
-    suspend fun getMfaDevices(): List<MfaDevice> =
-        api.getMfaDevices().map { MfaDevice(it.id, it.label, it.type, it.addedAt) }
+    suspend fun removeForwardingTarget(accountId: String, address: String) {
+        api.removeForwardingTarget(accountId, address)
+    }
 
-    suspend fun removeMfaDevice(id: String) = api.removeMfaDevice(id)
+    suspend fun verifyForwardingTarget(accountId: String, address: String): ForwardingTargetDto =
+        api.verifyForwardingTarget(accountId, address)
 
-    suspend fun getTeamMembers(accountId: String): List<TeamMember> =
-        api.getTeamMembers(accountId).map { TeamMember(it.id, it.emailAddress, it.role) }
-
-    suspend fun getPlanInfo(accountId: String): PlanInfo =
-        api.getPlanInfo(accountId).let { PlanInfo(it.planName, it.emailsUsed, it.emailsQuota, it.renewsAt) }
+    /** Formerly "team members". */
+    suspend fun getAccountUsers(accountId: String): List<AccountUserDto> =
+        api.getAccountUsers(accountId).users
 }
