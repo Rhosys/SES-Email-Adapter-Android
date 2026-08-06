@@ -17,39 +17,55 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.paging.compose.collectAsLazyPagingItems
 import ch.rhosys.email.di.LocalAppContainer
-import ch.rhosys.email.domain.model.Folder
+import ch.rhosys.email.domain.model.Signal
 import ch.rhosys.email.presentation.components.EmptyState
 import ch.rhosys.email.presentation.components.rememberViewModel
-import ch.rhosys.email.presentation.inbox.FolderListViewModel
 
-/** Decision #38: dedicated Quarantine screen with approve/reject buttons per row. */
+/** Quarantined signals awaiting an approve/reject decision. */
 @Composable
 fun QuarantineScreen(onThreadClick: (String) -> Unit) {
     val container = LocalAppContainer.current
     val viewModel = rememberViewModel {
-        FolderListViewModel(Folder.QUARANTINE, container.threadRepository, container.accountRepository)
+        QuarantineViewModel(container.threadRepository, container.accountRepository)
     }
-    val threads = viewModel.threads.collectAsLazyPagingItems()
+    val signals by viewModel.signals.collectAsState()
 
-    if (threads.itemCount == 0) {
-        EmptyState(title = "Nothing in quarantine", message = "Suspicious senders awaiting approval show up here.", celebration = false)
+    if (signals.isEmpty()) {
+        EmptyState(
+            title = "Nothing in quarantine",
+            message = "Mail from unrecognised senders waits here for approval.",
+            celebration = false,
+        )
         return
     }
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(threads.itemCount) { index ->
-            val thread = threads[index] ?: return@items
+        items(signals, key = { it.signalId }) { signal ->
             Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
                 Column(modifier = Modifier.padding(12.dp).fillMaxWidth()) {
-                    TextButton(onClick = { onThreadClick(thread.id) }) {
-                        Text(thread.subject, maxLines = 1)
+                    val subject = (signal as? Signal.InboundEmail)?.subject ?: "Filtered signal"
+                    val detail = when (signal) {
+                        is Signal.InboundEmail -> "${signal.from.display} — ${signal.summary}"
+                        is Signal.SystemNotice -> signal.detail.orEmpty()
+                        is Signal.OutboundEmail -> signal.subject
                     }
-                    Text(thread.snippet, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
-                        TextButton(onClick = { viewModel.approve(thread.id) }) { Text("Approve") }
-                        TextButton(onClick = { viewModel.reject(thread.id) }) { Text("Reject") }
+
+                    val threadId = signal.threadId
+                    if (threadId != null) {
+                        TextButton(onClick = { onThreadClick(threadId) }) { Text(subject, maxLines = 1) }
+                    } else {
+                        Text(subject, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                    }
+
+                    Text(detail, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        TextButton(onClick = { viewModel.approve(signal.signalId) }) { Text("Approve") }
+                        TextButton(onClick = { viewModel.reject(signal.signalId) }) { Text("Reject") }
                     }
                 }
             }

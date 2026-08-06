@@ -33,10 +33,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.paging.compose.LazyPagingItems
 import androidx.paging.compose.collectAsLazyPagingItems
 import ch.rhosys.email.domain.model.MailThread
+import ch.rhosys.email.domain.model.Urgency
 import ch.rhosys.email.presentation.components.DelayPickerSheet
 import ch.rhosys.email.presentation.components.EmptyState
 import ch.rhosys.email.presentation.components.rememberViewModel
@@ -70,25 +72,25 @@ fun InboxScreen(onThreadClick: (String) -> Unit) {
                     val thread = threads[index] ?: return@items
                     InboxRow(
                         thread = thread,
-                        isSelected = thread.id in uiState.selectedIds,
+                        isSelected = thread.threadId in uiState.selectedIds,
                         isSelectionMode = uiState.isSelectionMode,
                         onClick = {
-                            if (uiState.isSelectionMode) viewModel.toggleSelection(thread.id) else onThreadClick(thread.id)
+                            if (uiState.isSelectionMode) viewModel.toggleSelection(thread.threadId) else onThreadClick(thread.threadId)
                         },
-                        onLongClick = { viewModel.enterSelectionMode(thread.id) },
-                        onArchive = { viewModel.archive(thread.id) },
-                        onDelay = { viewModel.openDelayPicker(thread.id) },
-                        onDelete = { viewModel.delete(thread.id) },
+                        onLongClick = { viewModel.enterSelectionMode(thread.threadId) },
+                        onArchive = { viewModel.archive(thread.threadId) },
+                        onDelay = { viewModel.openSnoozePicker(thread.threadId) },
+                        onDelete = { viewModel.delete(thread.threadId) },
                     )
                 }
             }
         }
     }
 
-    if (uiState.delayTargetThreadId != null) {
+    if (uiState.snoozeTargetThreadId != null) {
         DelayPickerSheet(
-            onDismiss = { viewModel.dismissDelayPicker() },
-            onConfirm = { millis -> viewModel.confirmDelay(millis) },
+            onDismiss = { viewModel.dismissSnoozePicker() },
+            onConfirm = { millis -> viewModel.confirmSnooze(millis) },
         )
     }
 }
@@ -145,19 +147,31 @@ private fun InboxRow(
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = thread.participants.firstOrNull() ?: "Unknown",
+                        text = thread.sender.display,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = if (thread.isRead) null else androidx.compose.ui.text.font.FontWeight.Bold,
+                        // Emphasis comes from urgency, not unread state — the API
+                        // has no read/unread concept.
+                        fontWeight = when (thread.urgency) {
+                            Urgency.CRITICAL, Urgency.HIGH -> FontWeight.Bold
+                            else -> null
+                        },
+                        color = when (thread.urgency) {
+                            Urgency.CRITICAL -> MaterialTheme.colorScheme.error
+                            Urgency.SILENT -> MaterialTheme.colorScheme.onSurfaceVariant
+                            else -> MaterialTheme.colorScheme.onSurface
+                        },
                     )
-                    Text(
-                        text = DateFormat.getDateInstance(DateFormat.SHORT).format(Date(thread.lastMessageAt)),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    thread.lastSignalAt?.let { at ->
+                        Text(
+                            text = DateFormat.getDateInstance(DateFormat.SHORT).format(Date(at.toEpochMilli())),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 Text(text = thread.subject, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                 Text(
-                    text = thread.snippet,
+                    text = thread.summary,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
