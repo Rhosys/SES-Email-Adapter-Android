@@ -81,8 +81,6 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
-        <receiver android:name=".sync.UndoSendReceiver" android:exported="false" />
-
         <receiver
             android:name=".widget.InboxWidgetReceiver"
             android:exported="false">

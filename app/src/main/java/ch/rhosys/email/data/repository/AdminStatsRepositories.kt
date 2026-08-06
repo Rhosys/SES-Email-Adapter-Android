@@ -13,7 +13,7 @@ class StatsRepository(private val api: EmailApiService) {
 }
 
 /**
- * The previous admin repository called v1/admin/* routes that never existed.
+ * The previous admin repository called `v1/admin` routes that never existed.
  * The API offers a global health check plus per-signal reprocess and raw
  * fetch — both of which are addressed by account, thread and signal.
  */
