@@ -16,17 +16,17 @@ android {
         versionCode = (findProperty("versionCode") as? String)?.toIntOrNull() ?: 1
         versionName = (findProperty("versionName") as? String) ?: "1.0.0"
 
-        // Backend shared with the Numaeel web app (SES-Email-Adapter-UI). Override
+        // Backend shared with the web app (SES-Email-Adapter-UI). Override
         // per-environment via gradle.properties / -P flags in CI.
         buildConfigField(
             "String",
             "API_BASE_URL",
-            "\"${(findProperty("apiBaseUrl") as? String) ?: "https://api.numaeel.com/"}\"",
+            "\"${(findProperty("apiBaseUrl") as? String) ?: "https://email.rhosys.cloud/"}\"",
         )
         buildConfigField(
             "String",
             "AUTHRESS_CUSTOM_DOMAIN",
-            "\"${(findProperty("authressDomain") as? String) ?: "login.numaeel.com"}\"",
+            "\"${(findProperty("authressDomain") as? String) ?: "login.rhosys.cloud"}\"",
         )
         buildConfigField(
             "String",

@@ -36,12 +36,15 @@
                 <data android:scheme="numaeel" />
             </intent-filter>
 
-            <!-- HTTPS App Links to numaeel.com/mail/* -->
+            <!-- HTTPS App Links to email.rhosys.cloud/mail/*
+                 Requires https://email.rhosys.cloud/.well-known/assetlinks.json to
+                 list this package plus the Play App Signing SHA-256 fingerprint,
+                 otherwise autoVerify fails and the domain claim is rejected. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="numaeel.com" android:pathPrefix="/mail" />
+                <data android:scheme="https" android:host="email.rhosys.cloud" android:pathPrefix="/mail" />
             </intent-filter>
 
             <!-- mailto: handler so Numaeel can be set as the default email app. -->
