@@ -2,69 +2,81 @@ package ch.rhosys.email.presentation.thread
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import ch.rhosys.email.domain.model.Attachment
 import ch.rhosys.email.domain.model.MailThread
-import ch.rhosys.email.domain.model.Message
+import ch.rhosys.email.domain.model.SenderPolicy
+import ch.rhosys.email.domain.model.Signal
+import ch.rhosys.email.domain.repository.AccountRepository
 import ch.rhosys.email.domain.repository.ThreadRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class ThreadDetailUiState(
-    val expandedMessageIds: Set<String> = emptySet(),
+    val expandedSignalIds: Set<String> = emptySet(),
     val showBlockSenderConfirm: Boolean = false,
     val isLoading: Boolean = true,
+    val unsubscribeUrl: String? = null,
 )
 
+/**
+ * Thread detail. There is no mark-as-read on open — the API has no read state —
+ * and no attachment download, since the API exposes no download endpoint;
+ * attachments are shown with whatever `url` the backend supplies, if any.
+ */
 class ThreadViewModel(
+    private val accountId: String,
     private val threadId: String,
     private val threadRepository: ThreadRepository,
+    private val accountRepository: AccountRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ThreadDetailUiState())
     val uiState: StateFlow<ThreadDetailUiState> = _uiState.asStateFlow()
 
-    val thread: StateFlow<MailThread?> =
-        threadRepository.observeThread(threadId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val thread: StateFlow<MailThread?> = threadRepository.observeThread(threadId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    val messages: StateFlow<List<Message>> =
-        threadRepository.observeMessages(threadId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val signals: StateFlow<List<Signal>> = threadRepository.observeSignals(threadId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         viewModelScope.launch {
-            threadRepository.markRead(threadId)
-            runCatching { threadRepository.refreshMessages(threadId) }
+            runCatching { threadRepository.refreshSignals(accountId, threadId) }
             _uiState.value = _uiState.value.copy(isLoading = false)
         }
-        // Expand only the latest message by default (decision #16).
+        // Expand only the most recent signal by default.
         viewModelScope.launch {
-            messages.combine(thread) { msgs, _ -> msgs }.collect { msgs ->
-                val latest = msgs.maxByOrNull { it.sentAt }
-                if (latest != null && _uiState.value.expandedMessageIds.isEmpty()) {
-                    _uiState.value = _uiState.value.copy(expandedMessageIds = setOf(latest.id))
+            signals.collect { items ->
+                val latest = items.maxByOrNull { it.createdAt?.toEpochMilli() ?: 0L }
+                if (latest != null && _uiState.value.expandedSignalIds.isEmpty()) {
+                    _uiState.value = _uiState.value.copy(expandedSignalIds = setOf(latest.signalId))
                 }
             }
         }
     }
 
-    fun toggleExpanded(messageId: String) {
-        val current = _uiState.value.expandedMessageIds
+    fun toggleExpanded(signalId: String) {
+        val current = _uiState.value.expandedSignalIds
         _uiState.value = _uiState.value.copy(
-            expandedMessageIds = if (messageId in current) current - messageId else current + messageId,
+            expandedSignalIds = if (signalId in current) current - signalId else current + signalId,
         )
     }
 
-    fun downloadAttachment(attachment: Attachment) = viewModelScope.launch {
-        threadRepository.downloadAttachment(attachment)
+    fun archive() = viewModelScope.launch { threadRepository.archive(accountId, threadId) }
+
+    fun delete() = viewModelScope.launch { threadRepository.delete(accountId, threadId) }
+
+    fun unsubscribe() = viewModelScope.launch {
+        threadRepository.unsubscribe(accountId, threadId)
+            .onSuccess { url -> _uiState.value = _uiState.value.copy(unsubscribeUrl = url) }
     }
 
-    fun archive() = viewModelScope.launch { threadRepository.archive(threadId) }
-    fun delete() = viewModelScope.launch { threadRepository.delete(threadId) }
-    fun unsubscribe() = viewModelScope.launch { threadRepository.unsubscribe(threadId) }
+    fun consumeUnsubscribeUrl() {
+        _uiState.value = _uiState.value.copy(unsubscribeUrl = null)
+    }
 
     fun requestBlockSender() {
         _uiState.value = _uiState.value.copy(showBlockSenderConfirm = true)
@@ -74,11 +86,25 @@ class ThreadViewModel(
         _uiState.value = _uiState.value.copy(showBlockSenderConfirm = false)
     }
 
+    /**
+     * Blocking applies a reject policy to the sender's domain on the alias that
+     * received the mail — the API has no per-thread block.
+     */
     fun confirmBlockSender() {
-        viewModelScope.launch { threadRepository.blockSender(threadId) }
+        val current = thread.value ?: return dismissBlockSenderConfirm()
+        val domain = current.sender.address.substringAfter('@', "")
+        if (domain.isNotBlank()) {
+            viewModelScope.launch {
+                runCatching {
+                    accountRepository.setSenderPolicy(
+                        accountId = accountId,
+                        alias = current.recipientAddress,
+                        domain = domain,
+                        policy = SenderPolicy.BLOCK_REJECT,
+                    )
+                }
+            }
+        }
         dismissBlockSenderConfirm()
     }
-
-    fun approveQuarantine() = viewModelScope.launch { threadRepository.approveQuarantine(threadId) }
-    fun rejectQuarantine() = viewModelScope.launch { threadRepository.rejectQuarantine(threadId) }
 }
