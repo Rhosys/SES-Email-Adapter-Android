@@ -18,10 +18,12 @@ android {
 
         // Backend shared with the web app (SES-Email-Adapter-UI). Override
         // per-environment via gradle.properties / -P flags in CI.
+        // Must keep the trailing slash: Retrofit rejects a baseUrl without one,
+        // and the /api base path is what the endpoint paths (v1/*) hang off.
         buildConfigField(
             "String",
             "API_BASE_URL",
-            "\"${(findProperty("apiBaseUrl") as? String) ?: "https://email.rhosys.cloud/"}\"",
+            "\"${(findProperty("apiBaseUrl") as? String) ?: "https://email.rhosys.cloud/api/"}\"",
         )
         buildConfigField(
             "String",
