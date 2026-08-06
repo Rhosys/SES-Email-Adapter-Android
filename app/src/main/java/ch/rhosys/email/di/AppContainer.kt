@@ -42,7 +42,11 @@ class AppContainer(private val context: Context) {
     val authManager: AuthressAuthManager by lazy { AuthressAuthManager(context, tokenStore) }
 
     private val moshi: Moshi by lazy {
-        Moshi.Builder().build()
+        // SignalDto is a polymorphic union discriminated by `type`; Moshi needs the
+        // factory to pick the concrete variant before deserializing.
+        Moshi.Builder()
+            .add(ch.rhosys.email.data.remote.dto.SignalDtoAdapter.Factory)
+            .build()
     }
 
     private val okHttpClient: OkHttpClient by lazy {
