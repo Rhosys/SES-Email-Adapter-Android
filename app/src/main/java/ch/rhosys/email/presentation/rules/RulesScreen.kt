@@ -42,7 +42,10 @@ class RulesViewModel(private val ruleRepository: RuleRepository, accountReposito
         ruleRepository.observeRules(accountId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun setEnabled(ruleId: String, enabled: Boolean) = viewModelScope.launch { ruleRepository.setEnabled(ruleId, enabled) }
+    fun setEnabled(ruleId: String, enabled: Boolean) {
+        val accountId = activeAccountId.value ?: return
+        viewModelScope.launch { ruleRepository.setEnabled(accountId, ruleId, enabled) }
+    }
 }
 
 @Composable
@@ -57,7 +60,7 @@ fun RulesScreen() {
     }
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(rules, key = { it.id }) { rule ->
+        items(rules, key = { it.ruleId }) { rule ->
             Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -65,9 +68,21 @@ fun RulesScreen() {
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(rule.name, style = MaterialTheme.typography.titleMedium)
-                        Text(rule.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // A rule has no description; summarise its actions instead.
+                        Text(
+                            rule.actions.joinToString(", ") { a ->
+                                a.type.name.lowercase().replace('_', ' ')
+                            }.ifBlank { "No actions" },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
-                    Switch(checked = rule.isEnabled, onCheckedChange = { viewModel.setEnabled(rule.id, it) })
+                    Switch(
+                        checked = rule.isEnabled,
+                        // Backend-managed rules cannot be toggled from the client.
+                        enabled = !rule.isImmutable,
+                        onCheckedChange = { viewModel.setEnabled(rule.ruleId, it) },
+                    )
                 }
             }
         }

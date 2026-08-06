@@ -71,8 +71,12 @@ data class PatchAliasRequest(
 /** Per-sender-domain override on an alias. Replaces the old "block sender" call. */
 @JsonClass(generateAdapter = true)
 data class AliasSenderDto(
-    val domain: String,
+    val alias: String,
+    // The sender *domain*, despite the field name.
+    val sender: String,
     val policy: String,
+    val createdAt: String? = null,
+    val updatedAt: String? = null,
 )
 
 @JsonClass(generateAdapter = true)
@@ -85,7 +89,18 @@ data class SetAliasSenderRequest(
     val policy: String,
 )
 
-object UnknownSenderPolicy {
+/**
+ * Per-domain sender policy. Narrower than the unknown-sender policy: no
+ * quarantine options, and "allow" rather than "allow_all".
+ */
+object SenderPolicyWire {
+    const val ALLOW = "allow"
+    const val BLOCK_HIDDEN = "block_hidden"
+    const val BLOCK_REJECT = "block_reject"
+    const val REPORT_VIOLATION = "report_violation"
+}
+
+object UnknownSenderPolicyWire {
     const val ALLOW_ALL = "allow_all"
     const val QUARANTINE_VISIBLE = "quarantine_visible"
     const val QUARANTINE_HIDDEN = "quarantine_hidden"

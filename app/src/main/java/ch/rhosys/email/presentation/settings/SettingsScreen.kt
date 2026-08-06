@@ -37,9 +37,6 @@ import ch.rhosys.email.ui.theme.CatppuccinFlavor
 @Composable
 fun SettingsScreen(
     onNavigateStats: () -> Unit,
-    onNavigateBilling: () -> Unit,
-    onNavigateSupport: () -> Unit,
-    onNavigateAdmin: () -> Unit,
     onSignedOut: () -> Unit,
 ) {
     val container = LocalAppContainer.current
@@ -49,12 +46,13 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     var tabIndex by remember { mutableStateOf(0) }
     var showSignOutConfirm by remember { mutableStateOf(false) }
-    val tabs = listOf("Aliases", "Email & Forwarding", "Profile & Security", "Team")
+    // No Security tab: the API has no MFA endpoints. No billing either.
+    val tabs = listOf("Aliases", "Email & Forwarding", "Users")
 
     LaunchedEffect(tabIndex) {
         when (tabIndex) {
-            1 -> viewModel.loadForwardingAndDns()
-            2, 3 -> viewModel.loadSecurityAndTeam()
+            1 -> viewModel.loadForwardingAndDomains()
+            2 -> viewModel.loadAccountUsers()
         }
     }
 
@@ -63,11 +61,7 @@ fun SettingsScreen(
             uiState = uiState,
             onThemeSelected = viewModel::setThemeFlavor,
             onBiometricToggle = viewModel::setBiometricLockEnabled,
-            onAdminToggle = viewModel::setAdminPanelEnabled,
             onNavigateStats = onNavigateStats,
-            onNavigateBilling = onNavigateBilling,
-            onNavigateSupport = onNavigateSupport,
-            onNavigateAdmin = onNavigateAdmin,
             onSignOutClick = { showSignOutConfirm = true },
         )
         HorizontalDivider()
@@ -78,9 +72,13 @@ fun SettingsScreen(
         }
         when (tabIndex) {
             0 -> AliasesTab(uiState)
-            1 -> ForwardingTab(uiState, onVerifyDns = viewModel::verifyDns, onAddForwarding = viewModel::addForwardingAddress, onRemoveForwarding = viewModel::removeForwardingAddress)
-            2 -> SecurityTab(uiState, onRemoveMfa = viewModel::removeMfaDevice)
-            3 -> TeamTab(uiState)
+            1 -> ForwardingTab(
+                uiState = uiState,
+                onAddForwarding = viewModel::addForwardingTarget,
+                onRemoveForwarding = viewModel::removeForwardingTarget,
+                onVerifyForwarding = viewModel::verifyForwardingTarget,
+            )
+            2 -> UsersTab(uiState)
         }
     }
 
@@ -101,11 +99,7 @@ private fun AppPreferencesSection(
     uiState: SettingsUiState,
     onThemeSelected: (CatppuccinFlavor?) -> Unit,
     onBiometricToggle: (Boolean) -> Unit,
-    onAdminToggle: (Boolean) -> Unit,
     onNavigateStats: () -> Unit,
-    onNavigateBilling: () -> Unit,
-    onNavigateSupport: () -> Unit,
-    onNavigateAdmin: () -> Unit,
     onSignOutClick: () -> Unit,
 ) {
     Column(modifier = Modifier.padding(12.dp)) {
@@ -124,17 +118,7 @@ private fun AppPreferencesSection(
             supportingContent = { Text("Require Face/Fingerprint unlock to open the app") },
             trailingContent = { Switch(checked = uiState.biometricLockEnabled, onCheckedChange = onBiometricToggle) },
         )
-        ListItem(
-            headlineContent = { Text("Admin panel") },
-            supportingContent = { Text("Show Signal Inspector, health check, and reprocess tools") },
-            trailingContent = { Switch(checked = uiState.adminPanelEnabled, onCheckedChange = onAdminToggle) },
-        )
-        if (uiState.adminPanelEnabled) {
-            ListItem(headlineContent = { Text("Open admin panel") }, modifier = Modifier.clickableSettings(onNavigateAdmin))
-        }
         ListItem(headlineContent = { Text("Stats") }, modifier = Modifier.clickableSettings(onNavigateStats))
-        ListItem(headlineContent = { Text("Billing") }, modifier = Modifier.clickableSettings(onNavigateBilling))
-        ListItem(headlineContent = { Text("Support") }, modifier = Modifier.clickableSettings(onNavigateSupport))
         ListItem(
             headlineContent = { Text("Sign out", color = MaterialTheme.colorScheme.error) },
             modifier = Modifier.clickableSettings(onSignOutClick),
@@ -148,10 +132,10 @@ private fun Modifier.clickableSettings(onClick: () -> Unit): Modifier =
 @Composable
 private fun AliasesTab(uiState: SettingsUiState) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(uiState.aliases, key = { it.id }) { alias ->
+        items(uiState.aliases, key = { it.alias }) { alias ->
             ListItem(
-                headlineContent = { Text(alias.emailAddress) },
-                supportingContent = { Text(if (alias.isDefault) "Default alias" else "Alias") },
+                headlineContent = { Text(alias.alias) },
+                supportingContent = { Text("Unknown senders: ${alias.unknownSenderPolicy.label}") },
             )
         }
     }
@@ -160,9 +144,9 @@ private fun AliasesTab(uiState: SettingsUiState) {
 @Composable
 private fun ForwardingTab(
     uiState: SettingsUiState,
-    onVerifyDns: () -> Unit,
     onAddForwarding: (String) -> Unit,
     onRemoveForwarding: (String) -> Unit,
+    onVerifyForwarding: (String) -> Unit,
 ) {
     var newAddress by remember { mutableStateOf("") }
     LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
@@ -171,16 +155,22 @@ private fun ForwardingTab(
             ListItem(
                 headlineContent = { Text("${record.type} — ${record.name}") },
                 supportingContent = { Text(record.value, maxLines = 1) },
-                trailingContent = { Text(if (record.isVerified) "Verified" else "Pending") },
+                trailingContent = { Text(record.status.replaceFirstChar { it.uppercase() }) },
             )
         }
-        item { TextButton(onClick = onVerifyDns) { Text("Re-check verification") } }
         item { Text("Forwarding addresses", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp)) }
-        items(uiState.forwardingAddresses, key = { it.id }) { address ->
+        items(uiState.forwardingTargets, key = { it.target }) { target ->
             ListItem(
-                headlineContent = { Text(address.emailAddress) },
-                supportingContent = { Text(if (address.isVerified) "Verified" else "Pending verification") },
-                trailingContent = { TextButton(onClick = { onRemoveForwarding(address.id) }) { Text("Remove") } },
+                headlineContent = { Text(target.target) },
+                supportingContent = { Text(target.status.replaceFirstChar { it.uppercase() }) },
+                trailingContent = {
+                    Row {
+                        if (target.status != "verified") {
+                            TextButton(onClick = { onVerifyForwarding(target.target) }) { Text("Verify") }
+                        }
+                        TextButton(onClick = { onRemoveForwarding(target.target) }) { Text("Remove") }
+                    }
+                },
             )
         }
         item {
@@ -193,24 +183,13 @@ private fun ForwardingTab(
 }
 
 @Composable
-private fun SecurityTab(uiState: SettingsUiState, onRemoveMfa: (String) -> Unit) {
+private fun UsersTab(uiState: SettingsUiState) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-        item { Text("MFA devices", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(12.dp)) }
-        items(uiState.mfaDevices, key = { it.id }) { device ->
+        items(uiState.accountUsers, key = { it.userId }) { user ->
             ListItem(
-                headlineContent = { Text(device.label) },
-                supportingContent = { Text(device.type) },
-                trailingContent = { TextButton(onClick = { onRemoveMfa(device.id) }) { Text("Remove") } },
+                headlineContent = { Text(user.email ?: user.name ?: user.userId) },
+                supportingContent = { Text(user.role.orEmpty()) },
             )
-        }
-    }
-}
-
-@Composable
-private fun TeamTab(uiState: SettingsUiState) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(uiState.teamMembers, key = { it.id }) { member ->
-            ListItem(headlineContent = { Text(member.emailAddress) }, supportingContent = { Text(member.role) })
         }
     }
 }

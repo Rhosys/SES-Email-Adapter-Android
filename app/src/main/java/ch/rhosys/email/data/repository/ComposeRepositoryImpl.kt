@@ -28,11 +28,11 @@ class ComposeRepositoryImpl(
 
     override fun observeDrafts(accountId: String): Flow<List<Signal.OutboundEmail>> =
         signalDao.observeDrafts(accountId).map { rows ->
-            rows.mapNotNull { it.toDomain(attachments = emptyList()) as? Signal.OutboundEmail }
+            rows.mapNotNull { it.toDomain() as? Signal.OutboundEmail }
         }
 
     override suspend fun getDraft(signalId: String): Signal.OutboundEmail? =
-        signalDao.getById(signalId)?.toDomain(attachments = emptyList()) as? Signal.OutboundEmail
+        signalDao.getById(signalId)?.toDomain() as? Signal.OutboundEmail
 
     override suspend fun createDraft(
         accountId: String,

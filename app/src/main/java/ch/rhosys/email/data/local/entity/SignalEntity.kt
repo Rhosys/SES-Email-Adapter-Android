@@ -11,6 +11,8 @@ import ch.rhosys.email.domain.model.SignalStatus
 import ch.rhosys.email.domain.model.UnsubscribeInfo
 import ch.rhosys.email.domain.model.Urgency
 import ch.rhosys.email.domain.model.Workflow
+import org.json.JSONArray
+import org.json.JSONObject
 import java.time.Instant
 
 /**
@@ -64,9 +66,44 @@ data class SignalEntity(
 private fun addr(address: String?, name: String?): EmailAddress? =
     address?.let { EmailAddress(it, name) }
 
+/**
+ * Attachments live at a fixed URL carried on the signal itself — there is no
+ * download endpoint — so the array is cached verbatim alongside the signal.
+ */
+internal fun encodeAttachments(attachments: List<Attachment>): String =
+    JSONArray().apply {
+        attachments.forEach { a ->
+            put(
+                JSONObject()
+                    .put("filename", a.filename)
+                    .put("mimeType", a.mimeType)
+                    .put("sizeBytes", a.sizeBytes)
+                    .put("url", a.url ?: JSONObject.NULL),
+            )
+        }
+    }.toString()
+
+internal fun decodeAttachments(json: String?): List<Attachment> {
+    if (json.isNullOrBlank()) return emptyList()
+    return runCatching {
+        val array = JSONArray(json)
+        (0 until array.length()).map { i ->
+            val o = array.getJSONObject(i)
+            Attachment(
+                filename = o.optString("filename"),
+                mimeType = o.optString("mimeType"),
+                sizeBytes = o.optLong("sizeBytes"),
+                url = o.optString("url").takeIf { it.isNotBlank() && it != "null" },
+            )
+        }
+    }.getOrDefault(emptyList())
+}
+
 private fun List<String>.toAddresses(): List<EmailAddress> = map { EmailAddress(it) }
 
-fun SignalEntity.toDomain(attachments: List<Attachment>): Signal = when (kind) {
+fun SignalEntity.toDomain(): Signal {
+    val attachments = decodeAttachments(attachmentsJson)
+    return when (kind) {
     SignalEntity.Kind.OUTBOUND -> Signal.OutboundEmail(
         signalId = signalId,
         threadId = threadId,
@@ -113,17 +150,19 @@ fun SignalEntity.toDomain(attachments: List<Attachment>): Signal = when (kind) {
         type = noticeType.orEmpty(),
         detail = noticeDetail,
     )
+    }
 }
 
-/**
- * Flattens a domain signal for caching. [attachmentsJson] is supplied by the
- * repository, which owns the Moshi instance used to encode it.
- */
+/** Flattens a domain signal for caching, attachments included. */
 fun Signal.toEntity(
     accountId: String,
-    attachmentsJson: String? = null,
     isPendingSync: Boolean = false,
 ): SignalEntity {
+    val encodedAttachments = when (this) {
+        is Signal.InboundEmail -> encodeAttachments(attachments)
+        is Signal.OutboundEmail -> encodeAttachments(attachments)
+        is Signal.SystemNotice -> null
+    }
     val base = SignalEntity(
         signalId = signalId,
         threadId = threadId,
@@ -137,7 +176,7 @@ fun Signal.toEntity(
         subject = "", body = null, summary = null, urgency = null, workflow = null,
         recipientAddress = null, receivedAt = null, sentAt = null, sendInitiatedAt = null,
         sendFailureReason = null, unsubscribeType = null, unsubscribeUrl = null,
-        attachmentsJson = attachmentsJson, noticeType = null, noticeDetail = null,
+        attachmentsJson = encodedAttachments, noticeType = null, noticeDetail = null,
         isPendingSync = isPendingSync,
     )
     return when (this) {

@@ -10,7 +10,9 @@ import ch.rhosys.email.domain.model.MailThread
 import ch.rhosys.email.domain.model.Rule
 import ch.rhosys.email.domain.model.RuleAction
 import ch.rhosys.email.domain.model.RuleActionType
+import ch.rhosys.email.domain.model.AliasSender
 import ch.rhosys.email.domain.model.SenderPolicy
+import ch.rhosys.email.domain.model.UnknownSenderPolicy
 import ch.rhosys.email.domain.model.Signal
 import ch.rhosys.email.domain.model.SignalStatus
 import ch.rhosys.email.domain.model.Template
@@ -115,7 +117,7 @@ internal fun SignalDto.toDomain(): Signal = when (this) {
 internal fun AccountDto.toDomain() = Account(
     accountId = accountId,
     name = name,
-    defaultUnknownSenderPolicy = SenderPolicy.fromWire(filtering.defaultUnknownSenderPolicy),
+    defaultUnknownSenderPolicy = UnknownSenderPolicy.fromWire(filtering.defaultUnknownSenderPolicy),
     retentionDuration = retentionDuration,
     afterSendAction = AfterSendAction.fromWire(afterSendAction),
     billingPlan = billingPlan,
@@ -127,7 +129,7 @@ internal fun AccountDto.toDomain() = Account(
 internal fun AliasDto.toDomain(accountId: String) = Alias(
     alias = alias,
     accountId = accountId,
-    unknownSenderPolicy = SenderPolicy.fromWire(unknownSenderPolicy),
+    unknownSenderPolicy = UnknownSenderPolicy.fromWire(unknownSenderPolicy),
     createdAt = createdAt.toInstantOrNull(),
     updatedAt = updatedAt.toInstantOrNull(),
 )
@@ -167,4 +169,10 @@ internal fun ViewDto.toDomain(accountId: String) = View(
     workflow = workflow?.let(Workflow::fromWire),
     labels = labels,
     position = position,
+)
+
+internal fun AliasSenderDto.toDomain() = AliasSender(
+    alias = alias,
+    sender = sender,
+    policy = SenderPolicy.fromWire(policy),
 )

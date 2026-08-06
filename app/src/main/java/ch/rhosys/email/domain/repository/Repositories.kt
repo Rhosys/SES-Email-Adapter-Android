@@ -6,7 +6,9 @@ import ch.rhosys.email.domain.model.Alias
 import ch.rhosys.email.domain.model.Label
 import ch.rhosys.email.domain.model.MailThread
 import ch.rhosys.email.domain.model.Rule
+import ch.rhosys.email.domain.model.AliasSender
 import ch.rhosys.email.domain.model.SenderPolicy
+import ch.rhosys.email.domain.model.UnknownSenderPolicy
 import ch.rhosys.email.domain.model.Signal
 import ch.rhosys.email.domain.model.Template
 import ch.rhosys.email.domain.model.ThreadStatus
@@ -20,8 +22,16 @@ interface AccountRepository {
     suspend fun setActiveAccount(accountId: String)
     fun activeAccountId(): Flow<String?>
 
-    /** Blocking a sender is a per-domain policy on an alias, not a thread action. */
+    /**
+     * Sender controls, mirroring the web app's sender popup: a policy for one
+     * sender domain on an alias, plus the alias-level default for senders with
+     * no explicit entry. There is no per-thread block endpoint.
+     */
+    suspend fun getAliasSenders(accountId: String, alias: String): List<AliasSender>
+
     suspend fun setSenderPolicy(accountId: String, alias: String, domain: String, policy: SenderPolicy)
+
+    suspend fun setAliasUnknownSenderPolicy(accountId: String, alias: String, policy: UnknownSenderPolicy)
 }
 
 interface ThreadRepository {

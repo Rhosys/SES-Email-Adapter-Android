@@ -10,7 +10,7 @@ import java.time.Instant
 data class Account(
     val accountId: String,
     val name: String,
-    val defaultUnknownSenderPolicy: SenderPolicy,
+    val defaultUnknownSenderPolicy: UnknownSenderPolicy,
     val retentionDuration: String?,
     val afterSendAction: AfterSendAction,
     /** Exposed by the API for display only — there are no billing endpoints. */
@@ -24,29 +24,48 @@ data class Account(
 data class Alias(
     val alias: String,
     val accountId: String,
-    val unknownSenderPolicy: SenderPolicy,
+    val unknownSenderPolicy: UnknownSenderPolicy,
     val createdAt: Instant?,
     val updatedAt: Instant?,
 )
 
 /**
- * Disposition applied to mail from senders that are not explicitly allowed.
- * Setting this per sender-domain is how the app blocks a sender — there is no
- * block-sender endpoint.
+ * Policy for one specific sender domain on an alias. This is a different,
+ * narrower enum than [UnknownSenderPolicy] — it has no quarantine options and
+ * spells "allow" without the _all suffix.
  */
-enum class SenderPolicy {
-    ALLOW_ALL,
-    QUARANTINE_VISIBLE,
-    QUARANTINE_HIDDEN,
-    BLOCK_HIDDEN,
-    BLOCK_REJECT,
-    REPORT_VIOLATION,
+enum class SenderPolicy(val label: String) {
+    ALLOW("Allow"),
+    BLOCK_HIDDEN("Drop"),
+    BLOCK_REJECT("Block (reject)"),
+    REPORT_VIOLATION("Report violation"),
     ;
 
     val wire: String get() = name.lowercase()
 
     companion object {
         fun fromWire(value: String?): SenderPolicy =
+            entries.firstOrNull { it.wire == value } ?: ALLOW
+    }
+}
+
+/**
+ * Default disposition for senders with no explicit per-domain policy. Set on an
+ * account, and overridable per alias.
+ */
+enum class UnknownSenderPolicy(val label: String) {
+    ALLOW_ALL("Allow all"),
+    QUARANTINE_VISIBLE("Quarantine (visible)"),
+    QUARANTINE_HIDDEN("Quarantine (hidden)"),
+    BLOCK_HIDDEN("Drop"),
+    BLOCK_REJECT("Block (reject)"),
+    REPORT_VIOLATION("Report violation"),
+    ;
+
+    val wire: String get() = name.lowercase()
+
+    companion object {
+        fun fromWire(value: String?): UnknownSenderPolicy =
             entries.firstOrNull { it.wire == value } ?: QUARANTINE_VISIBLE
     }
 }
@@ -64,9 +83,13 @@ enum class AfterSendAction {
     }
 }
 
-/** Per-sender-domain override on an alias. */
+/**
+ * Per-sender-domain override on an alias. The wire field for the domain is
+ * `sender`, not `domain`.
+ */
 data class AliasSender(
-    val domain: String,
+    val alias: String,
+    val sender: String,
     val policy: SenderPolicy,
 )
 

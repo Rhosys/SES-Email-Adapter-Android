@@ -5,11 +5,14 @@ import ch.rhosys.email.data.local.dao.AccountDao
 import ch.rhosys.email.data.local.entity.toDomain
 import ch.rhosys.email.data.local.entity.toEntity
 import ch.rhosys.email.data.remote.api.EmailApiService
+import ch.rhosys.email.data.remote.dto.PatchAliasRequest
 import ch.rhosys.email.data.remote.dto.SetAliasSenderRequest
 import ch.rhosys.email.data.remote.dto.toDomain
 import ch.rhosys.email.domain.model.Account
 import ch.rhosys.email.domain.model.Alias
+import ch.rhosys.email.domain.model.AliasSender
 import ch.rhosys.email.domain.model.SenderPolicy
+import ch.rhosys.email.domain.model.UnknownSenderPolicy
 import ch.rhosys.email.domain.repository.AccountRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +57,9 @@ class AccountRepositoryImpl(
 
     override fun activeAccountId(): Flow<String?> = activeAccount.asStateFlow()
 
+    override suspend fun getAliasSenders(accountId: String, alias: String): List<AliasSender> =
+        api.getAliasSenders(accountId, alias).senders.map { it.toDomain() }
+
     /** Blocking or approving a sender is a per-domain policy on an alias. */
     override suspend fun setSenderPolicy(
         accountId: String,
@@ -62,5 +68,14 @@ class AccountRepositoryImpl(
         policy: SenderPolicy,
     ) {
         api.setAliasSenderPolicy(accountId, alias, domain, SetAliasSenderRequest(policy.wire))
+    }
+
+    override suspend fun setAliasUnknownSenderPolicy(
+        accountId: String,
+        alias: String,
+        policy: UnknownSenderPolicy,
+    ) {
+        val updated = api.patchAlias(accountId, alias, PatchAliasRequest(policy.wire))
+        dao.upsertAliases(listOf(updated.toDomain(accountId).toEntity()))
     }
 }

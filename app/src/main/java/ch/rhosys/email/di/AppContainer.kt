@@ -73,7 +73,7 @@ class AppContainer(private val context: Context) {
         // The v1 schema described an API that does not exist, so there is nothing
         // worth migrating — the cache simply refetches against the real one.
         Room.databaseBuilder(context, EmailDatabase::class.java, EmailDatabase.NAME)
-            .fallbackToDestructiveMigration(dropAllTables = true)
+            .fallbackToDestructiveMigration()
             .build()
     }
 

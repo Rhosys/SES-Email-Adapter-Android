@@ -5,7 +5,7 @@ import androidx.room.PrimaryKey
 import ch.rhosys.email.domain.model.Account
 import ch.rhosys.email.domain.model.AfterSendAction
 import ch.rhosys.email.domain.model.Alias
-import ch.rhosys.email.domain.model.SenderPolicy
+import ch.rhosys.email.domain.model.UnknownSenderPolicy
 import java.time.Instant
 
 @Entity(tableName = "accounts")
@@ -33,7 +33,7 @@ data class AliasEntity(
 fun AccountEntity.toDomain() = Account(
     accountId = accountId,
     name = name,
-    defaultUnknownSenderPolicy = SenderPolicy.fromWire(defaultUnknownSenderPolicy),
+    defaultUnknownSenderPolicy = UnknownSenderPolicy.fromWire(defaultUnknownSenderPolicy),
     retentionDuration = retentionDuration,
     afterSendAction = AfterSendAction.fromWire(afterSendAction),
     billingPlan = billingPlan,
@@ -57,7 +57,7 @@ fun Account.toEntity() = AccountEntity(
 fun AliasEntity.toDomain() = Alias(
     alias = alias,
     accountId = accountId,
-    unknownSenderPolicy = SenderPolicy.fromWire(unknownSenderPolicy),
+    unknownSenderPolicy = UnknownSenderPolicy.fromWire(unknownSenderPolicy),
     createdAt = createdAt?.let(Instant::ofEpochMilli),
     updatedAt = updatedAt?.let(Instant::ofEpochMilli),
 )

@@ -50,12 +50,12 @@ class ThreadRepositoryImpl(
 
     override fun observeSignals(threadId: String): Flow<List<Signal>> =
         signalDao.observeByThread(threadId).map { rows ->
-            rows.map { it.toDomain(attachments = emptyList()) }
+            rows.map { it.toDomain() }
         }
 
     override fun observeQuarantined(accountId: String): Flow<List<Signal>> =
         signalDao.observeQuarantined(accountId).map { rows ->
-            rows.map { it.toDomain(attachments = emptyList()) }
+            rows.map { it.toDomain() }
         }
 
     override fun search(accountId: String, query: String): Flow<List<MailThread>> =

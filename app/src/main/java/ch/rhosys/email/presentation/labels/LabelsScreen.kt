@@ -52,15 +52,15 @@ fun LabelsScreen() {
             EmptyState(title = "No labels yet", message = "Create a label to organize mail.", celebration = false, modifier = Modifier.padding(padding))
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
-                items(labels, key = { it.id }) { label ->
+                items(labels, key = { it.label }) { label ->
                     Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(12.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("${label.emoji ?: "🏷️"} ${label.name}", style = MaterialTheme.typography.bodyLarge)
-                            IconButton(onClick = { viewModel.delete(label.id) }) {
+                            Text("${label.icon ?: "🏷️"} ${label.name}", style = MaterialTheme.typography.bodyLarge)
+                            IconButton(onClick = { viewModel.delete(label.label) }) {
                                 Icon(Icons.Filled.Delete, contentDescription = "Delete ${label.name}")
                             }
                         }
