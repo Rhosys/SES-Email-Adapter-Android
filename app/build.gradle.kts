@@ -154,6 +154,9 @@ dependencies {
     debugImplementation(libs.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
+    // Android's org.json is a stub that throws "not mocked" in JVM unit tests;
+    // SignalEntity encodes attachments with it, so tests need a real one.
+    testImplementation("org.json:json:20240303")
     testImplementation(libs.junit5.jupiter)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
