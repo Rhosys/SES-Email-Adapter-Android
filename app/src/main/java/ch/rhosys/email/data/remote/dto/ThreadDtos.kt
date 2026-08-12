@@ -2,67 +2,69 @@ package ch.rhosys.email.data.remote.dto
 
 import com.squareup.moshi.JsonClass
 
+/**
+ * A thread as the backend models it. Note what is deliberately absent versus the
+ * previous hand-written model: there is no `folder`, no `isRead`, no `snippet`
+ * and no `participants`. Read/unread does not exist in this API at all, and
+ * foldering is expressed through [ThreadStatus].
+ */
 @JsonClass(generateAdapter = true)
 data class ThreadDto(
-    val id: String,
-    val accountId: String,
-    val subject: String,
-    val snippet: String,
-    val participants: List<String>,
-    val lastMessageAt: Long,
-    val isRead: Boolean,
-    val folder: String,
-    val labelIds: List<String>,
-    val followupAt: Long?,
-    val workflowType: String,
-    val workflowFields: Map<String, String> = emptyMap(),
-    val isBlockedSender: Boolean = false,
-    val unsubscribeUrl: String? = null,
-)
-
-@JsonClass(generateAdapter = true)
-data class ThreadPage(
-    val items: List<ThreadDto>,
-    val nextCursor: String?,
-)
-
-@JsonClass(generateAdapter = true)
-data class MessageDto(
-    val id: String,
     val threadId: String,
-    val fromAddress: String,
-    val toAddresses: List<String>,
-    val ccAddresses: List<String>,
-    val bodyMarkdown: String,
-    val bodyHtml: String?,
-    val sentAt: Long,
-    val deliveryStatus: String,
-    val attachments: List<AttachmentDto> = emptyList(),
-)
-
-@JsonClass(generateAdapter = true)
-data class AttachmentDto(
-    val id: String,
-    val messageId: String,
-    val filename: String,
-    val mimeType: String,
-    val sizeBytes: Long,
-)
-
-@JsonClass(generateAdapter = true)
-data class SendMessageRequest(
-    val fromAlias: String,
-    val toAddresses: List<String>,
-    val ccAddresses: List<String>,
-    val bccAddresses: List<String>,
+    val workflow: String,
+    val labels: List<String> = emptyList(),
+    val status: String,
+    val summary: String,
+    // Null once a thread has no signals left; such threads are hidden from the inbox.
+    val lastSignalAt: String? = null,
+    val deletedAt: String? = null,
+    val createdAt: String,
+    val updatedAt: String,
+    val retentionDuration: String? = null,
+    val urgency: String? = null,
+    val followupAt: String? = null,
+    val sender: EmailAddressDto,
+    val recipientAddress: String,
     val subject: String,
-    val bodyMarkdown: String,
-    val inReplyToThreadId: String?,
-    val sendAfter: Long?,
 )
 
 @JsonClass(generateAdapter = true)
-data class MoveThreadRequest(
-    val folder: String,
-    val followupAt: Long?,
+data class ThreadListResponse(
+    val threads: List<ThreadDto> = emptyList(),
+    val pagination: PaginationDto? = null,
 )
+
+/**
+ * PATCH body for a thread. Archiving, deleting, relabelling and setting a
+ * follow-up all go through here — there are no dedicated endpoints for them.
+ */
+@JsonClass(generateAdapter = true)
+data class PatchThreadRequest(
+    val status: String? = null,
+    val labels: List<String>? = null,
+    val followupAt: String? = null,
+)
+
+object ThreadStatus {
+    const val ACTIVE = "active"
+    const val ARCHIVED = "archived"
+    const val DELETED = "deleted"
+    const val REPORT_VIOLATION = "report_violation"
+}
+
+/** Workflow classifications the backend assigns to a thread. */
+object Workflow {
+    val ALL = listOf(
+        "auth", "conversation", "crm", "package", "travel", "payments",
+        "alert", "content", "onboarding", "notice", "healthcare", "job",
+        "support", "test", "events",
+    )
+}
+
+object ThreadUrgency {
+    const val CRITICAL = "critical"
+    const val HIGH = "high"
+    const val NORMAL = "normal"
+    const val LOW = "low"
+    const val SILENT = "silent"
+}

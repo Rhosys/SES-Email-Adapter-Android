@@ -2,83 +2,137 @@ package ch.rhosys.email.presentation.thread
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import ch.rhosys.email.domain.model.Attachment
 import ch.rhosys.email.domain.model.MailThread
-import ch.rhosys.email.domain.model.Message
+import ch.rhosys.email.domain.model.AliasSender
+import ch.rhosys.email.domain.model.SenderPolicy
+import ch.rhosys.email.domain.model.UnknownSenderPolicy
+import ch.rhosys.email.domain.model.Signal
+import ch.rhosys.email.domain.repository.AccountRepository
 import ch.rhosys.email.domain.repository.ThreadRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class ThreadDetailUiState(
-    val expandedMessageIds: Set<String> = emptySet(),
-    val showBlockSenderConfirm: Boolean = false,
+    val expandedSignalIds: Set<String> = emptySet(),
     val isLoading: Boolean = true,
+    val unsubscribeUrl: String? = null,
+    /** Sender popup state, mirroring the web app's SenderInfoPopup. */
+    val showSenderPolicy: Boolean = false,
+    val senderDomain: String? = null,
+    val senderPolicy: SenderPolicy? = null,
+    val aliasPolicy: UnknownSenderPolicy? = null,
+    val isSavingPolicy: Boolean = false,
 )
 
+/**
+ * Thread detail. There is no mark-as-read on open — the API has no read state —
+ * and no attachment download, since the API exposes no download endpoint;
+ * attachments are shown with whatever `url` the backend supplies, if any.
+ */
 class ThreadViewModel(
+    private val accountId: String,
     private val threadId: String,
     private val threadRepository: ThreadRepository,
+    private val accountRepository: AccountRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ThreadDetailUiState())
     val uiState: StateFlow<ThreadDetailUiState> = _uiState.asStateFlow()
 
-    val thread: StateFlow<MailThread?> =
-        threadRepository.observeThread(threadId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val thread: StateFlow<MailThread?> = threadRepository.observeThread(threadId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    val messages: StateFlow<List<Message>> =
-        threadRepository.observeMessages(threadId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val signals: StateFlow<List<Signal>> = threadRepository.observeSignals(threadId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         viewModelScope.launch {
-            threadRepository.markRead(threadId)
-            runCatching { threadRepository.refreshMessages(threadId) }
+            runCatching { threadRepository.refreshSignals(accountId, threadId) }
             _uiState.value = _uiState.value.copy(isLoading = false)
         }
-        // Expand only the latest message by default (decision #16).
+        // Expand only the most recent signal by default.
         viewModelScope.launch {
-            messages.combine(thread) { msgs, _ -> msgs }.collect { msgs ->
-                val latest = msgs.maxByOrNull { it.sentAt }
-                if (latest != null && _uiState.value.expandedMessageIds.isEmpty()) {
-                    _uiState.value = _uiState.value.copy(expandedMessageIds = setOf(latest.id))
+            signals.collect { items ->
+                val latest = items.maxByOrNull { it.createdAt?.toEpochMilli() ?: 0L }
+                if (latest != null && _uiState.value.expandedSignalIds.isEmpty()) {
+                    _uiState.value = _uiState.value.copy(expandedSignalIds = setOf(latest.signalId))
                 }
             }
         }
     }
 
-    fun toggleExpanded(messageId: String) {
-        val current = _uiState.value.expandedMessageIds
+    fun toggleExpanded(signalId: String) {
+        val current = _uiState.value.expandedSignalIds
         _uiState.value = _uiState.value.copy(
-            expandedMessageIds = if (messageId in current) current - messageId else current + messageId,
+            expandedSignalIds = if (signalId in current) current - signalId else current + signalId,
         )
     }
 
-    fun downloadAttachment(attachment: Attachment) = viewModelScope.launch {
-        threadRepository.downloadAttachment(attachment)
+    fun archive() = viewModelScope.launch { threadRepository.archive(accountId, threadId) }
+
+    fun delete() = viewModelScope.launch { threadRepository.delete(accountId, threadId) }
+
+    fun unsubscribe() = viewModelScope.launch {
+        threadRepository.unsubscribe(accountId, threadId)
+            .onSuccess { url -> _uiState.value = _uiState.value.copy(unsubscribeUrl = url) }
     }
 
-    fun archive() = viewModelScope.launch { threadRepository.archive(threadId) }
-    fun delete() = viewModelScope.launch { threadRepository.delete(threadId) }
-    fun unsubscribe() = viewModelScope.launch { threadRepository.unsubscribe(threadId) }
-
-    fun requestBlockSender() {
-        _uiState.value = _uiState.value.copy(showBlockSenderConfirm = true)
+    fun consumeUnsubscribeUrl() {
+        _uiState.value = _uiState.value.copy(unsubscribeUrl = null)
     }
 
-    fun dismissBlockSenderConfirm() {
-        _uiState.value = _uiState.value.copy(showBlockSenderConfirm = false)
+    /**
+     * Opens the sender controls, loading the current per-domain policy and the
+     * receiving alias's unknown-sender default — the same two settings the web
+     * app's sender popup exposes. There is no per-thread block.
+     */
+    fun openSenderPolicy() {
+        val current = thread.value ?: return
+        val domain = current.sender.address.substringAfter('@', current.sender.address)
+        _uiState.value = _uiState.value.copy(showSenderPolicy = true, senderDomain = domain)
+        viewModelScope.launch {
+            val senders = runCatching {
+                accountRepository.getAliasSenders(accountId, current.recipientAddress)
+            }.getOrDefault(emptyList<AliasSender>())
+            val existing = senders.firstOrNull { it.sender == domain }?.policy
+            val alias = accountRepository.observeAliases(accountId).first()
+                .firstOrNull { it.alias == current.recipientAddress }
+            _uiState.value = _uiState.value.copy(
+                senderPolicy = existing,
+                aliasPolicy = alias?.unknownSenderPolicy,
+            )
+        }
     }
 
-    fun confirmBlockSender() {
-        viewModelScope.launch { threadRepository.blockSender(threadId) }
-        dismissBlockSenderConfirm()
+    fun dismissSenderPolicy() {
+        _uiState.value = _uiState.value.copy(showSenderPolicy = false)
     }
 
-    fun approveQuarantine() = viewModelScope.launch { threadRepository.approveQuarantine(threadId) }
-    fun rejectQuarantine() = viewModelScope.launch { threadRepository.rejectQuarantine(threadId) }
+    fun setSenderPolicy(policy: SenderPolicy) {
+        val current = thread.value ?: return
+        val domain = _uiState.value.senderDomain ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSavingPolicy = true)
+            runCatching {
+                accountRepository.setSenderPolicy(accountId, current.recipientAddress, domain, policy)
+            }.onSuccess { _uiState.value = _uiState.value.copy(senderPolicy = policy) }
+            _uiState.value = _uiState.value.copy(isSavingPolicy = false)
+        }
+    }
+
+    fun setAliasPolicy(policy: UnknownSenderPolicy) {
+        val current = thread.value ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSavingPolicy = true)
+            runCatching {
+                accountRepository.setAliasUnknownSenderPolicy(accountId, current.recipientAddress, policy)
+            }.onSuccess { _uiState.value = _uiState.value.copy(aliasPolicy = policy) }
+            _uiState.value = _uiState.value.copy(isSavingPolicy = false)
+        }
+    }
 }

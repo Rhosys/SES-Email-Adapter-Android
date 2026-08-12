@@ -43,7 +43,6 @@ import kotlinx.coroutines.launch
 private fun iconFor(destination: Destination): ImageVector = when (destination) {
     Destination.Inbox -> Icons.Filled.Inbox
     Destination.Quarantine -> Icons.Filled.Shield
-    Destination.Spam -> Icons.Filled.Report
     Destination.Drafts -> Icons.Filled.Description
     Destination.Rules -> Icons.Filled.Rule
     Destination.Templates -> Icons.Filled.AutoAwesome
@@ -130,11 +129,12 @@ private fun AccountSwitcher() {
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
         Text("Accounts", style = MaterialTheme.typography.titleMedium)
         LazyColumn {
-            items(accounts, key = { it.id }) { account ->
+            items(accounts, key = { it.accountId }) { account ->
                 NavigationDrawerItem(
-                    label = { Text(account.emailAddress) },
-                    selected = account.id == activeId,
-                    onClick = { viewModel.select(account.id) },
+                    // An account has a name, not an address — addresses are aliases.
+                    label = { Text(account.name) },
+                    selected = account.accountId == activeId,
+                    onClick = { viewModel.select(account.accountId) },
                 )
             }
         }

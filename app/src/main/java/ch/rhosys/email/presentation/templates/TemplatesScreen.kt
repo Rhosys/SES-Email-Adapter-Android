@@ -52,7 +52,7 @@ fun TemplatesScreen(onUseTemplate: (Template) -> Unit) {
     }
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(templates, key = { it.id }) { template ->
+        items(templates, key = { it.templateId }) { template ->
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
             ) {

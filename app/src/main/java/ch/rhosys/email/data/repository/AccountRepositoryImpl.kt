@@ -5,8 +5,14 @@ import ch.rhosys.email.data.local.dao.AccountDao
 import ch.rhosys.email.data.local.entity.toDomain
 import ch.rhosys.email.data.local.entity.toEntity
 import ch.rhosys.email.data.remote.api.EmailApiService
+import ch.rhosys.email.data.remote.dto.PatchAliasRequest
+import ch.rhosys.email.data.remote.dto.SetAliasSenderRequest
+import ch.rhosys.email.data.remote.dto.toDomain
 import ch.rhosys.email.domain.model.Account
 import ch.rhosys.email.domain.model.Alias
+import ch.rhosys.email.domain.model.AliasSender
+import ch.rhosys.email.domain.model.SenderPolicy
+import ch.rhosys.email.domain.model.UnknownSenderPolicy
 import ch.rhosys.email.domain.repository.AccountRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,21 +27,26 @@ class AccountRepositoryImpl(
 
     private val activeAccount = MutableStateFlow(tokenStore.activeAccountId)
 
-    override fun observeAccounts(): Flow<List<Account>> = dao.observeAll().map { it.map { e -> e.toDomain() } }
+    override fun observeAccounts(): Flow<List<Account>> =
+        dao.observeAll().map { rows -> rows.map { it.toDomain() } }
 
     override fun observeAliases(accountId: String): Flow<List<Alias>> =
-        dao.observeAliases(accountId).map { it.map { e -> e.toDomain() } }
+        dao.observeAliases(accountId).map { rows -> rows.map { it.toDomain() } }
 
     override suspend fun refresh() {
-        val accounts = api.getAccounts()
-        dao.upsertAll(accounts.map { Account(it.id, it.emailAddress, it.displayName, it.avatarUrl, it.isPrimary, it.domain).toEntity() })
+        val accounts = api.getAccounts().accounts
+        dao.upsertAll(accounts.map { it.toDomain().toEntity() })
+
+        // No "primary" flag exists on an account, so the first is the default.
         if (tokenStore.activeAccountId == null) {
-            val primary = accounts.firstOrNull { it.isPrimary } ?: accounts.firstOrNull()
-            primary?.let { setActiveAccount(it.id) }
+            accounts.firstOrNull()?.let { setActiveAccount(it.accountId) }
         }
+
         accounts.forEach { account ->
-            val aliases = api.getAliases(account.id)
-            dao.upsertAliases(aliases.map { Alias(it.id, it.accountId, it.emailAddress, it.displayName, it.isDefault, it.isVerified).toEntity() })
+            runCatching {
+                val aliases = api.getAliases(account.accountId).aliases
+                dao.upsertAliases(aliases.map { it.toDomain(account.accountId).toEntity() })
+            }
         }
     }
 
@@ -45,4 +56,26 @@ class AccountRepositoryImpl(
     }
 
     override fun activeAccountId(): Flow<String?> = activeAccount.asStateFlow()
+
+    override suspend fun getAliasSenders(accountId: String, alias: String): List<AliasSender> =
+        api.getAliasSenders(accountId, alias).senders.map { it.toDomain() }
+
+    /** Blocking or approving a sender is a per-domain policy on an alias. */
+    override suspend fun setSenderPolicy(
+        accountId: String,
+        alias: String,
+        domain: String,
+        policy: SenderPolicy,
+    ) {
+        api.setAliasSenderPolicy(accountId, alias, domain, SetAliasSenderRequest(policy.wire))
+    }
+
+    override suspend fun setAliasUnknownSenderPolicy(
+        accountId: String,
+        alias: String,
+        policy: UnknownSenderPolicy,
+    ) {
+        val updated = api.patchAlias(accountId, alias, PatchAliasRequest(policy.wire))
+        dao.upsertAliases(listOf(updated.toDomain(accountId).toEntity()))
+    }
 }

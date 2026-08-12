@@ -31,13 +31,16 @@ import ch.rhosys.email.di.LocalAppContainer
 import ch.rhosys.email.presentation.components.MarkdownText
 import ch.rhosys.email.presentation.components.rememberViewModel
 
-/** Decision #12: full-screen compose with Markdown input and Edit/Preview toggle. */
+/**
+ * Full-screen compose. Cc and Bcc are absent because the draft-creation body the
+ * API accepts carries only from, to, subject and textBody.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ComposeScreen(threadId: String?, draftId: String?, onDone: () -> Unit) {
     val container = LocalAppContainer.current
     val viewModel = rememberViewModel {
-        ComposeViewModel(container.composeRepository, container.accountRepository, container.pendingSendManager, threadId, draftId)
+        ComposeViewModel(container.composeRepository, container.accountRepository, threadId, draftId)
     }
     val uiState by viewModel.uiState.collectAsState()
     val aliases by viewModel.aliases.collectAsState()
@@ -56,7 +59,11 @@ fun ComposeScreen(threadId: String?, draftId: String?, onDone: () -> Unit) {
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.send() }) {
+                    // Sending is immediate — the API has no undo window.
+                    IconButton(
+                        onClick = { viewModel.send() },
+                        enabled = uiState.canCompose && !uiState.isSending,
+                    ) {
                         Icon(Icons.Filled.Send, contentDescription = "Send")
                     }
                 },
@@ -70,14 +77,6 @@ fun ComposeScreen(threadId: String?, draftId: String?, onDone: () -> Unit) {
             TextField(
                 value = uiState.toAddresses, onValueChange = viewModel::setTo,
                 label = { Text("To") }, modifier = Modifier.fillMaxWidth(),
-            )
-            TextField(
-                value = uiState.ccAddresses, onValueChange = viewModel::setCc,
-                label = { Text("Cc") }, modifier = Modifier.fillMaxWidth(),
-            )
-            TextField(
-                value = uiState.bccAddresses, onValueChange = viewModel::setBcc,
-                label = { Text("Bcc") }, modifier = Modifier.fillMaxWidth(),
             )
             TextField(
                 value = uiState.subject, onValueChange = viewModel::setSubject,
@@ -98,10 +97,10 @@ fun ComposeScreen(threadId: String?, draftId: String?, onDone: () -> Unit) {
             }
 
             if (uiState.isPreview) {
-                MarkdownText(uiState.bodyMarkdown, modifier = Modifier.fillMaxSize())
+                MarkdownText(uiState.body, modifier = Modifier.fillMaxSize())
             } else {
                 TextField(
-                    value = uiState.bodyMarkdown, onValueChange = viewModel::setBody,
+                    value = uiState.body, onValueChange = viewModel::setBody,
                     label = { Text("Message (Markdown)") },
                     modifier = Modifier.fillMaxSize().weight(1f),
                 )
@@ -113,8 +112,8 @@ fun ComposeScreen(threadId: String?, draftId: String?, onDone: () -> Unit) {
         ModalBottomSheet(onDismissRequest = { viewModel.dismissAliasPicker() }) {
             LazyColumn {
                 items(aliases) { alias ->
-                    TextButton(onClick = { viewModel.setFromAlias(alias.emailAddress) }) {
-                        Text(alias.emailAddress)
+                    TextButton(onClick = { viewModel.setFromAlias(alias.alias) }) {
+                        Text(alias.alias)
                     }
                 }
             }

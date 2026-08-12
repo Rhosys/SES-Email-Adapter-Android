@@ -1,24 +1,45 @@
 package ch.rhosys.email.data.remote.api
 
 import ch.rhosys.email.data.remote.dto.AccountDto
+import ch.rhosys.email.data.remote.dto.AccountListResponse
+import ch.rhosys.email.data.remote.dto.AccountUserListResponse
 import ch.rhosys.email.data.remote.dto.AliasDto
-import ch.rhosys.email.data.remote.dto.DnsRecordDto
-import ch.rhosys.email.data.remote.dto.DraftDto
-import ch.rhosys.email.data.remote.dto.ForwardingAddressDto
+import ch.rhosys.email.data.remote.dto.AliasListResponse
+import ch.rhosys.email.data.remote.dto.AliasSenderDto
+import ch.rhosys.email.data.remote.dto.AliasSenderListResponse
+import ch.rhosys.email.data.remote.dto.CreateDraftSignalRequest
+import ch.rhosys.email.data.remote.dto.CreateForwardingTargetRequest
+import ch.rhosys.email.data.remote.dto.CreateLabelRequest
+import ch.rhosys.email.data.remote.dto.CreateRuleRequest
+import ch.rhosys.email.data.remote.dto.DomainListResponse
+import ch.rhosys.email.data.remote.dto.DomainWithRecordsDto
+import ch.rhosys.email.data.remote.dto.EmailTemplateDto
+import ch.rhosys.email.data.remote.dto.ForwardingTargetDto
+import ch.rhosys.email.data.remote.dto.ForwardingTargetListResponse
 import ch.rhosys.email.data.remote.dto.HealthCheckDto
 import ch.rhosys.email.data.remote.dto.LabelDto
-import ch.rhosys.email.data.remote.dto.MessageDto
-import ch.rhosys.email.data.remote.dto.MfaDeviceDto
-import ch.rhosys.email.data.remote.dto.MoveThreadRequest
-import ch.rhosys.email.data.remote.dto.PlanInfoDto
+import ch.rhosys.email.data.remote.dto.LabelListResponse
+import ch.rhosys.email.data.remote.dto.PatchAccountRequest
+import ch.rhosys.email.data.remote.dto.PatchAliasRequest
+import ch.rhosys.email.data.remote.dto.PatchLabelRequest
+import ch.rhosys.email.data.remote.dto.PatchRuleRequest
+import ch.rhosys.email.data.remote.dto.PatchSignalRequest
+import ch.rhosys.email.data.remote.dto.PatchThreadRequest
+import ch.rhosys.email.data.remote.dto.QuarantineResponseRequest
 import ch.rhosys.email.data.remote.dto.RuleDto
-import ch.rhosys.email.data.remote.dto.SendMessageRequest
-import ch.rhosys.email.data.remote.dto.StatsSummaryDto
-import ch.rhosys.email.data.remote.dto.SupportTicketRequest
-import ch.rhosys.email.data.remote.dto.TeamMemberDto
-import ch.rhosys.email.data.remote.dto.TemplateDto
+import ch.rhosys.email.data.remote.dto.RuleListResponse
+import ch.rhosys.email.data.remote.dto.SetAliasSenderRequest
+import ch.rhosys.email.data.remote.dto.SignalDto
+import ch.rhosys.email.data.remote.dto.SignalListResponse
+import ch.rhosys.email.data.remote.dto.TemplateListResponse
 import ch.rhosys.email.data.remote.dto.ThreadDto
-import ch.rhosys.email.data.remote.dto.ThreadPage
+import ch.rhosys.email.data.remote.dto.ThreadListResponse
+import ch.rhosys.email.data.remote.dto.UnsubscribeResultDto
+import ch.rhosys.email.data.remote.dto.UpdateDraftSignalRequest
+import ch.rhosys.email.data.remote.dto.UpsertTemplateRequest
+import ch.rhosys.email.data.remote.dto.UserConfigurationDto
+import ch.rhosys.email.data.remote.dto.ViewListResponse
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -31,142 +52,329 @@ import retrofit2.http.Query
 import retrofit2.http.Streaming
 
 /**
- * Backend contract shared with the Numaeel web app (SES-Email-Adapter-UI).
- * Paths follow that app's existing REST conventions; adjust base paths here
- * if the deployed API differs — this interface is the single seam.
+ * Backend contract, transcribed from the OpenAPI 3.1 document published at
+ * https://email.rhosys.cloud/.well-known/api-catalog (SES Email Adapter 1.0.0).
+ *
+ * Two conventions to keep in mind when adding to this interface:
+ *
+ *  - There is no `v1/` prefix. Paths are relative to the `/api` base path set in
+ *    BuildConfig.API_BASE_URL.
+ *  - Almost everything nests under `/accounts/{accountId}`. Thread and signal
+ *    routes are not addressable without the account id.
+ *
+ * Operations the app previously declared that this API does not provide, and
+ * which are therefore absent here: read/unread marking, folders, top-level
+ * drafts, attachment download, send cancellation, MFA device management,
+ * billing, and support tickets.
  */
 interface EmailApiService {
 
-    @GET("v1/accounts")
-    suspend fun getAccounts(): List<AccountDto>
+    // ── Accounts ────────────────────────────────────────────────────────────
 
-    @GET("v1/accounts/{accountId}/aliases")
-    suspend fun getAliases(@Path("accountId") accountId: String): List<AliasDto>
+    @GET("accounts")
+    suspend fun getAccounts(): AccountListResponse
 
-    @GET("v1/accounts/{accountId}/threads")
+    @GET("accounts/{accountId}")
+    suspend fun getAccount(@Path("accountId") accountId: String): AccountDto
+
+    @PATCH("accounts/{accountId}")
+    suspend fun patchAccount(
+        @Path("accountId") accountId: String,
+        @Body body: PatchAccountRequest,
+    ): AccountDto
+
+    // ── Aliases ─────────────────────────────────────────────────────────────
+
+    @GET("accounts/{accountId}/aliases")
+    suspend fun getAliases(
+        @Path("accountId") accountId: String,
+        @Query("domain") domain: String? = null,
+    ): AliasListResponse
+
+    @PATCH("accounts/{accountId}/aliases/{address}")
+    suspend fun patchAlias(
+        @Path("accountId") accountId: String,
+        @Path("address") address: String,
+        @Body body: PatchAliasRequest,
+    ): AliasDto
+
+    @GET("accounts/{accountId}/aliases/{address}/senders")
+    suspend fun getAliasSenders(
+        @Path("accountId") accountId: String,
+        @Path("address") address: String,
+    ): AliasSenderListResponse
+
+    /** Sender-domain policy. This is how a sender is blocked or approved. */
+    @PUT("accounts/{accountId}/aliases/{address}/senders/{domain}")
+    suspend fun setAliasSenderPolicy(
+        @Path("accountId") accountId: String,
+        @Path("address") address: String,
+        @Path("domain") domain: String,
+        @Body body: SetAliasSenderRequest,
+    ): AliasSenderDto
+
+    @DELETE("accounts/{accountId}/aliases/{address}/senders/{domain}")
+    suspend fun deleteAliasSenderPolicy(
+        @Path("accountId") accountId: String,
+        @Path("address") address: String,
+        @Path("domain") domain: String,
+    ): Response<Unit>
+
+    // ── Threads ─────────────────────────────────────────────────────────────
+
+    @GET("accounts/{accountId}/threads")
     suspend fun getThreads(
         @Path("accountId") accountId: String,
-        @Query("folder") folder: String,
+        @Query("workflow") workflow: String? = null,
+        @Query("label") label: String? = null,
+        @Query("status") status: String? = null,
+        @Query("q") query: String? = null,
         @Query("cursor") cursor: String? = null,
-        @Query("since") since: Long? = null,
-    ): ThreadPage
+        @Query("limit") limit: Int? = null,
+        @Query("refresh") refresh: String? = null,
+    ): ThreadListResponse
 
-    @GET("v1/threads/{threadId}")
-    suspend fun getThread(@Path("threadId") threadId: String): ThreadDto
+    @GET("accounts/{accountId}/threads/{threadId}")
+    suspend fun getThread(
+        @Path("accountId") accountId: String,
+        @Path("threadId") threadId: String,
+    ): ThreadDto
 
-    @GET("v1/threads/{threadId}/messages")
-    suspend fun getMessages(@Path("threadId") threadId: String): List<MessageDto>
+    /** Archive, delete, relabel and set follow-up all go through this one call. */
+    @PATCH("accounts/{accountId}/threads/{threadId}")
+    suspend fun patchThread(
+        @Path("accountId") accountId: String,
+        @Path("threadId") threadId: String,
+        @Body body: PatchThreadRequest,
+    ): ThreadDto
 
-    @PATCH("v1/threads/{threadId}")
-    suspend fun moveThread(@Path("threadId") threadId: String, @Body request: MoveThreadRequest): ThreadDto
+    @POST("accounts/{accountId}/threads/{threadId}/unsubscribe")
+    suspend fun unsubscribeThread(
+        @Path("accountId") accountId: String,
+        @Path("threadId") threadId: String,
+    ): UnsubscribeResultDto
 
-    @POST("v1/threads/{threadId}/read")
-    suspend fun markRead(@Path("threadId") threadId: String)
+    // ── Signals ─────────────────────────────────────────────────────────────
 
-    @DELETE("v1/threads/{threadId}")
-    suspend fun deleteThread(@Path("threadId") threadId: String)
+    @GET("accounts/{accountId}/threads/{threadId}/signals")
+    suspend fun getThreadSignals(
+        @Path("accountId") accountId: String,
+        @Path("threadId") threadId: String,
+        @Query("cursor") cursor: String? = null,
+        @Query("limit") limit: Int? = null,
+    ): SignalListResponse
 
-    @POST("v1/threads/{threadId}/labels/{labelId}")
-    suspend fun addLabel(@Path("threadId") threadId: String, @Path("labelId") labelId: String)
+    /** Account-wide signal listing. `status` is required — see SignalStatus. */
+    @GET("accounts/{accountId}/signals")
+    suspend fun getSignals(
+        @Path("accountId") accountId: String,
+        @Query("status") status: String,
+        @Query("cursor") cursor: String? = null,
+        @Query("limit") limit: Int? = null,
+    ): SignalListResponse
 
-    @DELETE("v1/threads/{threadId}/labels/{labelId}")
-    suspend fun removeLabel(@Path("threadId") threadId: String, @Path("labelId") labelId: String)
+    /** Creates a draft signal on a thread. Drafts are signals with status "draft". */
+    @POST("accounts/{accountId}/threads/{threadId}/signals")
+    suspend fun createDraftSignal(
+        @Path("accountId") accountId: String,
+        @Path("threadId") threadId: String,
+        @Body body: CreateDraftSignalRequest,
+    ): SignalDto
 
-    @POST("v1/threads/{threadId}/unsubscribe")
-    suspend fun unsubscribe(@Path("threadId") threadId: String)
+    @PUT("accounts/{accountId}/threads/{threadId}/signals/{signalId}")
+    suspend fun updateDraftSignal(
+        @Path("accountId") accountId: String,
+        @Path("threadId") threadId: String,
+        @Path("signalId") signalId: String,
+        @Body body: UpdateDraftSignalRequest,
+    ): SignalDto
 
-    @POST("v1/threads/{threadId}/block-sender")
-    suspend fun blockSender(@Path("threadId") threadId: String)
+    @PATCH("accounts/{accountId}/threads/{threadId}/signals/{signalId}")
+    suspend fun patchSignal(
+        @Path("accountId") accountId: String,
+        @Path("threadId") threadId: String,
+        @Path("signalId") signalId: String,
+        @Body body: PatchSignalRequest,
+    ): SignalDto
 
-    @POST("v1/threads/{threadId}/quarantine/approve")
-    suspend fun approveQuarantine(@Path("threadId") threadId: String)
+    @DELETE("accounts/{accountId}/threads/{threadId}/signals/{signalId}")
+    suspend fun deleteSignal(
+        @Path("accountId") accountId: String,
+        @Path("threadId") threadId: String,
+        @Path("signalId") signalId: String,
+    ): Response<Unit>
 
-    @POST("v1/threads/{threadId}/quarantine/reject")
-    suspend fun rejectQuarantine(@Path("threadId") threadId: String)
+    @POST("accounts/{accountId}/threads/{threadId}/signals/{signalId}/send")
+    suspend fun sendSignal(
+        @Path("accountId") accountId: String,
+        @Path("threadId") threadId: String,
+        @Path("signalId") signalId: String,
+    ): Response<Unit>
 
-    @GET("v1/accounts/{accountId}/labels")
-    suspend fun getLabels(@Path("accountId") accountId: String): List<LabelDto>
+    @POST("accounts/{accountId}/threads/{threadId}/signals/{signalId}/rsvp")
+    suspend fun rsvpSignal(
+        @Path("accountId") accountId: String,
+        @Path("threadId") threadId: String,
+        @Path("signalId") signalId: String,
+    ): SignalDto
 
-    @POST("v1/accounts/{accountId}/labels")
-    suspend fun createLabel(@Path("accountId") accountId: String, @Body label: LabelDto): LabelDto
-
-    @PUT("v1/labels/{labelId}")
-    suspend fun updateLabel(@Path("labelId") labelId: String, @Body label: LabelDto): LabelDto
-
-    @DELETE("v1/labels/{labelId}")
-    suspend fun deleteLabel(@Path("labelId") labelId: String)
-
-    @GET("v1/accounts/{accountId}/drafts")
-    suspend fun getDrafts(@Path("accountId") accountId: String): List<DraftDto>
-
-    @PUT("v1/drafts/{draftId}")
-    suspend fun saveDraft(@Path("draftId") draftId: String, @Body draft: DraftDto): DraftDto
-
-    @DELETE("v1/drafts/{draftId}")
-    suspend fun deleteDraft(@Path("draftId") draftId: String)
-
-    @POST("v1/messages/send")
-    suspend fun sendMessage(@Body request: SendMessageRequest): MessageDto
-
-    @POST("v1/messages/{messageId}/cancel-send")
-    suspend fun cancelSend(@Path("messageId") messageId: String): Response<Unit>
+    @POST("accounts/{accountId}/threads/{threadId}/signals/{signalId}/reprocess")
+    suspend fun reprocessSignal(
+        @Path("accountId") accountId: String,
+        @Path("threadId") threadId: String,
+        @Path("signalId") signalId: String,
+    ): SignalDto
 
     @Streaming
-    @GET("v1/messages/{messageId}/attachments/{attachmentId}/download")
-    suspend fun downloadAttachment(
-        @Path("messageId") messageId: String,
-        @Path("attachmentId") attachmentId: String,
-    ): Response<okhttp3.ResponseBody>
+    @GET("accounts/{accountId}/threads/{threadId}/signals/{signalId}/raw")
+    suspend fun getRawSignal(
+        @Path("accountId") accountId: String,
+        @Path("threadId") threadId: String,
+        @Path("signalId") signalId: String,
+    ): ResponseBody
 
-    @GET("v1/accounts/{accountId}/rules")
-    suspend fun getRules(@Path("accountId") accountId: String): List<RuleDto>
+    /** Approve or reject a quarantined signal. */
+    @POST("accounts/{accountId}/signals/{signalId}/quarantineResponse")
+    suspend fun respondToQuarantine(
+        @Path("accountId") accountId: String,
+        @Path("signalId") signalId: String,
+        @Body body: QuarantineResponseRequest,
+    ): Response<Unit>
 
-    @PATCH("v1/rules/{ruleId}")
-    suspend fun setRuleEnabled(@Path("ruleId") ruleId: String, @Body body: Map<String, Boolean>): RuleDto
+    // ── Labels ──────────────────────────────────────────────────────────────
 
-    @GET("v1/accounts/{accountId}/templates")
-    suspend fun getTemplates(@Path("accountId") accountId: String): List<TemplateDto>
+    @GET("accounts/{accountId}/labels")
+    suspend fun getLabels(@Path("accountId") accountId: String): LabelListResponse
 
-    @GET("v1/accounts/{accountId}/dns-records")
-    suspend fun getDnsRecords(@Path("accountId") accountId: String): List<DnsRecordDto>
+    @POST("accounts/{accountId}/labels")
+    suspend fun createLabel(
+        @Path("accountId") accountId: String,
+        @Body body: CreateLabelRequest,
+    ): LabelDto
 
-    @POST("v1/accounts/{accountId}/dns-records/verify")
-    suspend fun verifyDnsRecords(@Path("accountId") accountId: String): List<DnsRecordDto>
+    @PATCH("accounts/{accountId}/labels/{labelId}")
+    suspend fun patchLabel(
+        @Path("accountId") accountId: String,
+        @Path("labelId") labelId: String,
+        @Body body: PatchLabelRequest,
+    ): LabelDto
 
-    @GET("v1/accounts/{accountId}/forwarding-addresses")
-    suspend fun getForwardingAddresses(@Path("accountId") accountId: String): List<ForwardingAddressDto>
+    @DELETE("accounts/{accountId}/labels/{labelId}")
+    suspend fun deleteLabel(
+        @Path("accountId") accountId: String,
+        @Path("labelId") labelId: String,
+    ): Response<Unit>
 
-    @POST("v1/accounts/{accountId}/forwarding-addresses")
-    suspend fun addForwardingAddress(@Path("accountId") accountId: String, @Body body: Map<String, String>): ForwardingAddressDto
+    // ── Rules ───────────────────────────────────────────────────────────────
 
-    @DELETE("v1/forwarding-addresses/{id}")
-    suspend fun removeForwardingAddress(@Path("id") id: String)
+    @GET("accounts/{accountId}/rules")
+    suspend fun getRules(@Path("accountId") accountId: String): RuleListResponse
 
-    @GET("v1/security/mfa-devices")
-    suspend fun getMfaDevices(): List<MfaDeviceDto>
+    @POST("accounts/{accountId}/rules")
+    suspend fun createRule(
+        @Path("accountId") accountId: String,
+        @Body body: CreateRuleRequest,
+    ): RuleDto
 
-    @DELETE("v1/security/mfa-devices/{id}")
-    suspend fun removeMfaDevice(@Path("id") id: String)
+    @PATCH("accounts/{accountId}/rules/{ruleId}")
+    suspend fun patchRule(
+        @Path("accountId") accountId: String,
+        @Path("ruleId") ruleId: String,
+        @Body body: PatchRuleRequest,
+    ): RuleDto
 
-    @GET("v1/accounts/{accountId}/team")
-    suspend fun getTeamMembers(@Path("accountId") accountId: String): List<TeamMemberDto>
+    @DELETE("accounts/{accountId}/rules/{ruleId}")
+    suspend fun deleteRule(
+        @Path("accountId") accountId: String,
+        @Path("ruleId") ruleId: String,
+    ): Response<Unit>
 
-    @GET("v1/accounts/{accountId}/billing")
-    suspend fun getPlanInfo(@Path("accountId") accountId: String): PlanInfoDto
+    // ── Templates ───────────────────────────────────────────────────────────
 
-    @GET("v1/accounts/{accountId}/stats")
-    suspend fun getStats(@Path("accountId") accountId: String): StatsSummaryDto
+    @GET("accounts/{accountId}/templates")
+    suspend fun getTemplates(@Path("accountId") accountId: String): TemplateListResponse
 
-    @POST("v1/support/tickets")
-    suspend fun submitSupportTicket(@Body request: SupportTicketRequest): Response<Unit>
+    @POST("accounts/{accountId}/templates")
+    suspend fun createTemplate(
+        @Path("accountId") accountId: String,
+        @Body body: UpsertTemplateRequest,
+    ): EmailTemplateDto
 
-    @GET("v1/admin/health")
+    @PUT("accounts/{accountId}/templates/{templateId}")
+    suspend fun updateTemplate(
+        @Path("accountId") accountId: String,
+        @Path("templateId") templateId: String,
+        @Body body: UpsertTemplateRequest,
+    ): EmailTemplateDto
+
+    @DELETE("accounts/{accountId}/templates/{templateId}")
+    suspend fun deleteTemplate(
+        @Path("accountId") accountId: String,
+        @Path("templateId") templateId: String,
+    ): Response<Unit>
+
+    // ── Views ───────────────────────────────────────────────────────────────
+
+    @GET("accounts/{accountId}/views")
+    suspend fun getViews(@Path("accountId") accountId: String): ViewListResponse
+
+    // ── Domains and forwarding ──────────────────────────────────────────────
+
+    @GET("accounts/{accountId}/domains")
+    suspend fun getDomains(@Path("accountId") accountId: String): DomainListResponse
+
+    @GET("accounts/{accountId}/domains/{domainId}")
+    suspend fun getDomain(
+        @Path("accountId") accountId: String,
+        @Path("domainId") domainId: String,
+    ): DomainWithRecordsDto
+
+    @GET("accounts/{accountId}/forwarding-addresses")
+    suspend fun getForwardingTargets(
+        @Path("accountId") accountId: String,
+    ): ForwardingTargetListResponse
+
+    @POST("accounts/{accountId}/forwarding-addresses")
+    suspend fun addForwardingTarget(
+        @Path("accountId") accountId: String,
+        @Body body: CreateForwardingTargetRequest,
+    ): ForwardingTargetDto
+
+    @DELETE("accounts/{accountId}/forwarding-addresses/{address}")
+    suspend fun removeForwardingTarget(
+        @Path("accountId") accountId: String,
+        @Path("address") address: String,
+    ): Response<Unit>
+
+    @POST("accounts/{accountId}/forwarding-addresses/{address}/verify")
+    suspend fun verifyForwardingTarget(
+        @Path("accountId") accountId: String,
+        @Path("address") address: String,
+    ): ForwardingTargetDto
+
+    // ── Users and configuration ─────────────────────────────────────────────
+
+    @GET("accounts/{accountId}/users")
+    suspend fun getAccountUsers(
+        @Path("accountId") accountId: String,
+    ): AccountUserListResponse
+
+    @GET("user/{userId}/configuration")
+    suspend fun getUserConfiguration(
+        @Path("userId") userId: String,
+    ): UserConfigurationDto
+
+    @PATCH("user/{userId}/configuration")
+    suspend fun patchUserConfiguration(
+        @Path("userId") userId: String,
+        @Body body: UserConfigurationDto,
+    ): UserConfigurationDto
+
+    // ── Stats and health ────────────────────────────────────────────────────
+
+    @GET("accounts/{accountId}/stats")
+    suspend fun getStats(@Path("accountId") accountId: String): Map<String, Any?>
+
+    @GET("healthcheck")
     suspend fun getHealthCheck(): HealthCheckDto
-
-    @POST("v1/admin/threads/{threadId}/reprocess")
-    suspend fun reprocessThread(@Path("threadId") threadId: String): ThreadDto
-
-    @Streaming
-    @GET("v1/admin/threads/{threadId}/raw")
-    suspend fun getRawEmail(@Path("threadId") threadId: String): Response<okhttp3.ResponseBody>
 }

@@ -32,14 +32,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.RadioButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import ch.rhosys.email.di.LocalAppContainer
-import ch.rhosys.email.domain.model.Folder
-import ch.rhosys.email.domain.model.Message
+import androidx.compose.ui.platform.LocalUriHandler
+import ch.rhosys.email.domain.model.Attachment
+import ch.rhosys.email.domain.model.Signal
 import ch.rhosys.email.presentation.components.MarkdownText
 import ch.rhosys.email.presentation.components.rememberViewModel
 import java.text.DateFormat
@@ -47,13 +50,24 @@ import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ThreadScreen(threadId: String, onBack: () -> Unit, onReply: (String) -> Unit) {
+fun ThreadScreen(accountId: String, threadId: String, onBack: () -> Unit, onReply: (String) -> Unit) {
     val container = LocalAppContainer.current
-    val viewModel = rememberViewModel { ThreadViewModel(threadId, container.threadRepository) }
+    val viewModel = rememberViewModel {
+        ThreadViewModel(accountId, threadId, container.threadRepository, container.accountRepository)
+    }
     val thread by viewModel.thread.collectAsState()
-    val messages by viewModel.messages.collectAsState()
+    val signals by viewModel.signals.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     var showMenu by remember { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
+
+    // Unsubscribe returns a URL to open rather than completing server-side.
+    LaunchedEffect(uiState.unsubscribeUrl) {
+        uiState.unsubscribeUrl?.let { url ->
+            runCatching { uriHandler.openUri(url) }
+            viewModel.consumeUnsubscribeUrl()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -73,9 +87,9 @@ fun ThreadScreen(threadId: String, onBack: () -> Unit, onReply: (String) -> Unit
                         Icon(Icons.Filled.MoreVert, contentDescription = "More")
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                        DropdownMenuItem(text = { Text("Block sender") }, onClick = {
+                        DropdownMenuItem(text = { Text("Sender policy") }, onClick = {
                             showMenu = false
-                            viewModel.requestBlockSender()
+                            viewModel.openSenderPolicy()
                         }, leadingIcon = { Icon(Icons.Filled.Block, contentDescription = null) })
                     }
                 },
@@ -83,44 +97,99 @@ fun ThreadScreen(threadId: String, onBack: () -> Unit, onReply: (String) -> Unit
         },
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            if (thread?.folder == Folder.QUARANTINE) {
-                QuarantineActionBar(onApprove = { viewModel.approveQuarantine(); onBack() }, onReject = { viewModel.rejectQuarantine(); onBack() })
-            }
-            if (!thread?.unsubscribeUrl.isNullOrEmpty()) {
+            // Any inbound signal carrying unsubscribe info makes the thread
+            // unsubscribable; the flag no longer lives on the thread itself.
+            val unsubscribable = signals.any { it is Signal.InboundEmail && it.unsubscribe != null }
+            if (unsubscribable) {
                 UnsubscribeBar(onUnsubscribe = { viewModel.unsubscribe() })
             }
-            thread?.let { WorkflowPanelView(it.workflowType, it.workflowFields, modifier = Modifier.padding(12.dp)) }
+            thread?.let { WorkflowPanelView(it.workflow, emptyMap(), modifier = Modifier.padding(12.dp)) }
 
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(messages, key = { it.id }) { message ->
-                    MessageCard(
-                        message = message,
-                        expanded = message.id in uiState.expandedMessageIds,
-                        onToggle = { viewModel.toggleExpanded(message.id) },
-                        onDownload = { viewModel.downloadAttachment(it) },
+                items(signals, key = { it.signalId }) { signal ->
+                    SignalCard(
+                        signal = signal,
+                        expanded = signal.signalId in uiState.expandedSignalIds,
+                        onToggle = { viewModel.toggleExpanded(signal.signalId) },
+                        onOpenAttachment = { att -> att.url?.let { runCatching { uriHandler.openUri(it) } } },
                     )
                 }
             }
         }
     }
 
-    if (uiState.showBlockSenderConfirm) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissBlockSenderConfirm() },
-            title = { Text("Block this sender?") },
-            text = { Text("You won't receive future emails from this address.") },
-            confirmButton = { TextButton(onClick = { viewModel.confirmBlockSender() }) { Text("Block") } },
-            dismissButton = { TextButton(onClick = { viewModel.dismissBlockSenderConfirm() }) { Text("Cancel") } },
+    if (uiState.showSenderPolicy) {
+        SenderPolicyDialog(
+            uiState = uiState,
+            onSetSenderPolicy = viewModel::setSenderPolicy,
+            onSetAliasPolicy = viewModel::setAliasPolicy,
+            onDismiss = { viewModel.dismissSenderPolicy() },
         )
     }
 }
 
+/**
+ * Mirrors the web app's sender popup: a policy for this sender's domain, plus
+ * the receiving alias's default for senders with no explicit entry. Policies
+ * apply to the whole domain, which is the unit the API works in.
+ */
 @Composable
-private fun QuarantineActionBar(onApprove: () -> Unit, onReject: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        TextButton(onClick = onApprove) { Text("Approve") }
-        TextButton(onClick = onReject) { Text("Reject") }
-    }
+private fun SenderPolicyDialog(
+    uiState: ThreadDetailUiState,
+    onSetSenderPolicy: (ch.rhosys.email.domain.model.SenderPolicy) -> Unit,
+    onSetAliasPolicy: (ch.rhosys.email.domain.model.UnknownSenderPolicy) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Sender policy") },
+        text = {
+            Column {
+                Text(
+                    "Domain: ${uiState.senderDomain.orEmpty()}",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text("Sender policy", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
+                ch.rhosys.email.domain.model.SenderPolicy.entries.forEach { policy ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable(enabled = !uiState.isSavingPolicy) {
+                            onSetSenderPolicy(policy)
+                        }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = uiState.senderPolicy == policy,
+                            onClick = { onSetSenderPolicy(policy) },
+                            enabled = !uiState.isSavingPolicy,
+                        )
+                        Text(policy.label)
+                    }
+                }
+                Text(
+                    "Unknown senders on this alias",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+                ch.rhosys.email.domain.model.UnknownSenderPolicy.entries.forEach { policy ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable(enabled = !uiState.isSavingPolicy) {
+                            onSetAliasPolicy(policy)
+                        }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = uiState.aliasPolicy == policy,
+                            onClick = { onSetAliasPolicy(policy) },
+                            enabled = !uiState.isSavingPolicy,
+                        )
+                        Text(policy.label)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+    )
 }
 
 @Composable
@@ -137,28 +206,55 @@ private fun UnsubscribeBar(onUnsubscribe: () -> Unit) {
     }
 }
 
+/**
+ * Renders any of the three signal shapes. Attachments open at the URL the
+ * backend supplies on the signal — there is no download endpoint.
+ */
 @Composable
-private fun MessageCard(
-    message: Message,
+private fun SignalCard(
+    signal: Signal,
     expanded: Boolean,
     onToggle: () -> Unit,
-    onDownload: (ch.rhosys.email.domain.model.Attachment) -> Unit,
+    onOpenAttachment: (Attachment) -> Unit,
 ) {
+    val sender = when (signal) {
+        is Signal.InboundEmail -> signal.from.display
+        is Signal.OutboundEmail -> signal.from.display
+        is Signal.SystemNotice -> signal.type.replace('_', ' ').replaceFirstChar { it.uppercase() }
+    }
+    val body = when (signal) {
+        is Signal.InboundEmail -> signal.body ?: signal.summary
+        is Signal.OutboundEmail -> signal.body.orEmpty()
+        is Signal.SystemNotice -> signal.detail.orEmpty()
+    }
+    val attachments = when (signal) {
+        is Signal.InboundEmail -> signal.attachments
+        is Signal.OutboundEmail -> signal.attachments
+        is Signal.SystemNotice -> emptyList()
+    }
+
     Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
         Column(modifier = Modifier.padding(12.dp).clickable(onClick = onToggle)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text(message.fromAddress, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(message.sentAt)),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text(sender, style = MaterialTheme.typography.titleMedium)
+                signal.createdAt?.let { at ->
+                    Text(
+                        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                            .format(Date(at.toEpochMilli())),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (signal is Signal.OutboundEmail && signal.isDraft) {
+                Text("Draft", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
             if (expanded) {
-                MarkdownText(message.bodyMarkdown, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-                message.attachments.forEach { attachment ->
+                MarkdownText(body, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                attachments.forEach { attachment ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp).clickable { onDownload(attachment) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                            .clickable(enabled = attachment.url != null) { onOpenAttachment(attachment) },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(Icons.Filled.AttachFile, contentDescription = null)
@@ -167,7 +263,7 @@ private fun MessageCard(
                 }
             } else {
                 Text(
-                    message.bodyMarkdown.take(80),
+                    body.take(80),
                     maxLines = 1,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

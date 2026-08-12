@@ -6,16 +6,12 @@ sealed class Destination(val route: String) {
     data object Inbox : Destination("inbox")
     data object Archived : Destination("archived")
     data object Quarantine : Destination("quarantine")
-    data object Spam : Destination("spam")
     data object Drafts : Destination("drafts")
     data object Labels : Destination("labels")
     data object Rules : Destination("rules")
     data object Templates : Destination("templates")
     data object Settings : Destination("settings")
-    data object Admin : Destination("admin")
     data object Stats : Destination("stats")
-    data object Billing : Destination("billing")
-    data object Support : Destination("support")
 
     data object Thread : Destination("thread/{threadId}") {
         fun route(threadId: String) = "thread/$threadId"
@@ -27,7 +23,11 @@ sealed class Destination(val route: String) {
     }
 
     companion object {
-        /** Drawer items mirroring the web sidebar (decision #11). */
-        val drawerItems = listOf(Inbox, Quarantine, Spam, Drafts, Rules, Templates, Labels, Settings)
+        /**
+         * Spam, Admin, Billing and Support are absent: the API backs none of
+         * them. Filtered mail surfaces under Quarantine, which maps to signal
+         * status plus quarantineResponse.
+         */
+        val drawerItems = listOf(Inbox, Quarantine, Drafts, Rules, Templates, Labels, Settings)
     }
 }

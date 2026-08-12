@@ -6,16 +6,19 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import ch.rhosys.email.data.local.entity.AccountEntity
 import ch.rhosys.email.data.local.entity.AliasEntity
-import ch.rhosys.email.data.local.entity.DraftEntity
 import ch.rhosys.email.data.local.entity.LabelEntity
 import ch.rhosys.email.data.local.entity.RuleEntity
 import ch.rhosys.email.data.local.entity.TemplateEntity
+import ch.rhosys.email.data.local.entity.ViewEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AccountDao {
     @Query("SELECT * FROM accounts")
     fun observeAll(): Flow<List<AccountEntity>>
+
+    @Query("SELECT * FROM accounts WHERE accountId = :accountId")
+    suspend fun getById(accountId: String): AccountEntity?
 
     @Query("SELECT * FROM aliases WHERE accountId = :accountId")
     fun observeAliases(accountId: String): Flow<List<AliasEntity>>
@@ -26,8 +29,8 @@ interface AccountDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAliases(aliases: List<AliasEntity>)
 
-    @Query("DELETE FROM accounts WHERE id = :id")
-    suspend fun delete(id: String)
+    @Query("DELETE FROM accounts WHERE accountId = :accountId")
+    suspend fun delete(accountId: String)
 }
 
 @Dao
@@ -41,38 +44,23 @@ interface LabelDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(label: LabelEntity)
 
-    @Query("DELETE FROM labels WHERE id = :id")
-    suspend fun delete(id: String)
-}
-
-@Dao
-interface DraftDao {
-    @Query("SELECT * FROM drafts WHERE accountId = :accountId ORDER BY updatedAt DESC")
-    fun observeAll(accountId: String): Flow<List<DraftEntity>>
-
-    @Query("SELECT * FROM drafts WHERE id = :id")
-    suspend fun getById(id: String): DraftEntity?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(draft: DraftEntity)
-
-    @Query("SELECT * FROM drafts WHERE isPendingSync = 1")
-    suspend fun pendingSync(): List<DraftEntity>
-
-    @Query("DELETE FROM drafts WHERE id = :id")
-    suspend fun delete(id: String)
+    @Query("DELETE FROM labels WHERE label = :label")
+    suspend fun delete(label: String)
 }
 
 @Dao
 interface RuleDao {
-    @Query("SELECT * FROM rules WHERE accountId = :accountId ORDER BY name ASC")
+    @Query("SELECT * FROM rules WHERE accountId = :accountId ORDER BY priorityOrder ASC")
     fun observeAll(accountId: String): Flow<List<RuleEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(rules: List<RuleEntity>)
 
-    @Query("UPDATE rules SET isEnabled = :isEnabled WHERE id = :id")
-    suspend fun setEnabled(id: String, isEnabled: Boolean)
+    @Query("UPDATE rules SET isEnabled = :isEnabled WHERE ruleId = :ruleId")
+    suspend fun setEnabled(ruleId: String, isEnabled: Boolean)
+
+    @Query("DELETE FROM rules WHERE ruleId = :ruleId")
+    suspend fun delete(ruleId: String)
 }
 
 @Dao
@@ -82,4 +70,16 @@ interface TemplateDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(templates: List<TemplateEntity>)
+
+    @Query("DELETE FROM templates WHERE templateId = :templateId")
+    suspend fun delete(templateId: String)
+}
+
+@Dao
+interface ViewDao {
+    @Query("SELECT * FROM views WHERE accountId = :accountId ORDER BY position ASC")
+    fun observeAll(accountId: String): Flow<List<ViewEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(views: List<ViewEntity>)
 }

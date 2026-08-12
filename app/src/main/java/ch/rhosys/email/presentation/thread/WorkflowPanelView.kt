@@ -31,19 +31,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import ch.rhosys.email.domain.model.WorkflowType
+import ch.rhosys.email.domain.model.Workflow
 import androidx.core.content.getSystemService
 
 /**
- * Renders one card per workflow classification (decision #37: all 14 types).
- * Since the backend contract for structured fields isn't fixed yet, this uses
- * a generic label/value layout keyed by [WorkflowType] for icon + title, with
- * copy buttons on each value (decision #72).
+ * One card per workflow classification, keyed by the backend's [Workflow] enum.
+ *
+ * Structured fields come from the signal's typed workflowData payload, which
+ * varies per workflow; callers flatten whichever payload they have into
+ * label/value pairs. The free-form workflowFields map the old thread model
+ * carried does not exist in the API.
  */
 @Composable
-fun WorkflowPanelView(type: WorkflowType, fields: Map<String, String>, modifier: Modifier = Modifier) {
-    if (type == WorkflowType.NONE || fields.isEmpty()) return
-    val (icon, title) = workflowMeta(type)
+fun WorkflowPanelView(workflow: Workflow, fields: Map<String, String>, modifier: Modifier = Modifier) {
+    if (fields.isEmpty()) return
+    val (icon, title) = workflowMeta(workflow)
     val context = LocalContext.current
     val clipboard = context.getSystemService<ClipboardManager>()
 
@@ -74,20 +76,20 @@ fun WorkflowPanelView(type: WorkflowType, fields: Map<String, String>, modifier:
     }
 }
 
-private fun workflowMeta(type: WorkflowType): Pair<ImageVector, String> = when (type) {
-    WorkflowType.AUTH -> Icons.Filled.Security to "Verification code"
-    WorkflowType.TRAVEL -> Icons.Filled.Flight to "Travel itinerary"
-    WorkflowType.PAYMENT -> Icons.Filled.Payments to "Payment"
-    WorkflowType.SCHEDULING -> Icons.Filled.Schedule to "Scheduled event"
-    WorkflowType.CONVERSATION -> Icons.Filled.Info to "Conversation"
-    WorkflowType.CRM -> Icons.Filled.Info to "Contact"
-    WorkflowType.PACKAGE -> Icons.Filled.Inventory2 to "Package tracking"
-    WorkflowType.ALERT -> Icons.Filled.Warning to "Alert"
-    WorkflowType.CONTENT -> Icons.Filled.Info to "Content summary"
-    WorkflowType.STATUS -> Icons.Filled.Info to "Status"
-    WorkflowType.HEALTHCARE -> Icons.Filled.HealthAndSafety to "Healthcare"
-    WorkflowType.JOB -> Icons.Filled.Work to "Job update"
-    WorkflowType.SUPPORT -> Icons.Filled.SupportAgent to "Support ticket"
-    WorkflowType.TEST -> Icons.Filled.Info to "Test signal"
-    WorkflowType.NONE -> Icons.Filled.Info to ""
+private fun workflowMeta(workflow: Workflow): Pair<ImageVector, String> = when (workflow) {
+    Workflow.AUTH -> Icons.Filled.Security to "Verification code"
+    Workflow.TRAVEL -> Icons.Filled.Flight to "Travel itinerary"
+    Workflow.PAYMENTS -> Icons.Filled.Payments to "Payment"
+    Workflow.EVENTS -> Icons.Filled.Schedule to "Event"
+    Workflow.CONVERSATION -> Icons.Filled.Info to "Conversation"
+    Workflow.CRM -> Icons.Filled.Info to "Contact"
+    Workflow.PACKAGE -> Icons.Filled.Inventory2 to "Package tracking"
+    Workflow.ALERT -> Icons.Filled.Warning to "Alert"
+    Workflow.CONTENT -> Icons.Filled.Info to "Content summary"
+    Workflow.NOTICE -> Icons.Filled.Info to "Notice"
+    Workflow.ONBOARDING -> Icons.Filled.Info to "Getting started"
+    Workflow.HEALTHCARE -> Icons.Filled.HealthAndSafety to "Healthcare"
+    Workflow.JOB -> Icons.Filled.Work to "Job update"
+    Workflow.SUPPORT -> Icons.Filled.SupportAgent to "Support"
+    Workflow.TEST -> Icons.Filled.Info to "Test signal"
 }

@@ -14,9 +14,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ch.rhosys.email.di.LocalAppContainer
-import ch.rhosys.email.presentation.admin.AdminScreen
 import ch.rhosys.email.presentation.auth.LoginScreen
-import ch.rhosys.email.presentation.billing.BillingScreen
 import ch.rhosys.email.presentation.changelog.ChangelogDialog
 import ch.rhosys.email.presentation.compose.ComposeScreen
 import ch.rhosys.email.presentation.drafts.DraftsScreen
@@ -27,9 +25,7 @@ import ch.rhosys.email.presentation.onboarding.OnboardingScreen
 import ch.rhosys.email.presentation.quarantine.QuarantineScreen
 import ch.rhosys.email.presentation.rules.RulesScreen
 import ch.rhosys.email.presentation.settings.SettingsScreen
-import ch.rhosys.email.presentation.spam.SpamScreen
 import ch.rhosys.email.presentation.stats.StatsScreen
-import ch.rhosys.email.presentation.support.SupportScreen
 import ch.rhosys.email.presentation.templates.TemplatesScreen
 import ch.rhosys.email.presentation.thread.ThreadScreen
 import kotlinx.coroutines.flow.first
@@ -67,6 +63,7 @@ fun RootNavGraph() {
 @Composable
 private fun AppNavHost() {
     val navController = rememberNavController()
+    val container = LocalAppContainer.current
 
     AppScaffold(navController) { modifier ->
         NavHost(navController = navController, startDestination = Destination.Inbox.route, modifier = modifier) {
@@ -76,25 +73,23 @@ private fun AppNavHost() {
             composable(Destination.Quarantine.route) {
                 QuarantineScreen(onThreadClick = { navController.navigate(Destination.Thread.route(it)) })
             }
-            composable(Destination.Spam.route) {
-                SpamScreen(onThreadClick = { navController.navigate(Destination.Thread.route(it)) })
-            }
             composable(Destination.Drafts.route) {
-                DraftsScreen(onDraftClick = { navController.navigate(Destination.Compose.route(draftId = it)) })
+                DraftsScreen(
+                    onDraftClick = { threadId, signalId ->
+                        navController.navigate(Destination.Compose.route(threadId = threadId, draftId = signalId))
+                    },
+                )
             }
             composable(Destination.Labels.route) { LabelsScreen() }
             composable(Destination.Rules.route) { RulesScreen() }
-            composable(Destination.Templates.route) {
-                TemplatesScreen(onUseTemplate = { navController.navigate(Destination.Compose.route()) })
-            }
+            // Templates are applied from within a reply; there is no standalone
+            // compose target to send them to.
+            composable(Destination.Templates.route) { TemplatesScreen(onUseTemplate = {}) }
             composable(
                 Destination.Settings.route,
             ) {
                 SettingsScreen(
                     onNavigateStats = { navController.navigate(Destination.Stats.route) },
-                    onNavigateBilling = { navController.navigate(Destination.Billing.route) },
-                    onNavigateSupport = { navController.navigate(Destination.Support.route) },
-                    onNavigateAdmin = { navController.navigate(Destination.Admin.route) },
                     onSignedOut = {
                         navController.navigate(Destination.Inbox.route) {
                             popUpTo(0)
@@ -102,16 +97,18 @@ private fun AppNavHost() {
                     },
                 )
             }
-            composable(Destination.Admin.route) { AdminScreen() }
             composable(Destination.Stats.route) { StatsScreen() }
-            composable(Destination.Billing.route) { BillingScreen() }
-            composable(Destination.Support.route) { SupportScreen() }
             composable(
                 Destination.Thread.route,
                 arguments = listOf(navArgument("threadId") { type = NavType.StringType }),
             ) { backStackEntry ->
                 val threadId = backStackEntry.arguments?.getString("threadId") ?: return@composable
+                // Thread and signal routes are account-scoped.
+                val accountId by container.accountRepository.activeAccountId()
+                    .collectAsState(initial = null)
+                val currentAccountId = accountId ?: return@composable
                 ThreadScreen(
+                    accountId = currentAccountId,
                     threadId = threadId,
                     onBack = { navController.popBackStack() },
                     onReply = { navController.navigate(Destination.Compose.route(threadId = threadId)) },

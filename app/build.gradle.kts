@@ -16,17 +16,19 @@ android {
         versionCode = (findProperty("versionCode") as? String)?.toIntOrNull() ?: 1
         versionName = (findProperty("versionName") as? String) ?: "1.0.0"
 
-        // Backend shared with the Numaeel web app (SES-Email-Adapter-UI). Override
+        // Backend shared with the web app (SES-Email-Adapter-UI). Override
         // per-environment via gradle.properties / -P flags in CI.
+        // Must keep the trailing slash: Retrofit rejects a baseUrl without one,
+        // and the /api base path is what the endpoint paths (v1/*) hang off.
         buildConfigField(
             "String",
             "API_BASE_URL",
-            "\"${(findProperty("apiBaseUrl") as? String) ?: "https://api.numaeel.com/"}\"",
+            "\"${(findProperty("apiBaseUrl") as? String) ?: "https://email.rhosys.cloud/api/"}\"",
         )
         buildConfigField(
             "String",
             "AUTHRESS_CUSTOM_DOMAIN",
-            "\"${(findProperty("authressDomain") as? String) ?: "login.numaeel.com"}\"",
+            "\"${(findProperty("authressDomain") as? String) ?: "login.rhosys.cloud"}\"",
         )
         buildConfigField(
             "String",
@@ -152,6 +154,9 @@ dependencies {
     debugImplementation(libs.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
+    // Android's org.json is a stub that throws "not mocked" in JVM unit tests;
+    // SignalEntity encodes attachments with it, so tests need a real one.
+    testImplementation("org.json:json:20240303")
     testImplementation(libs.junit5.jupiter)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)

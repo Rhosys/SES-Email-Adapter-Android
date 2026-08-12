@@ -5,12 +5,11 @@ import androidx.lifecycle.viewModelScope
 import ch.rhosys.email.data.auth.AuthressAuthManager
 import ch.rhosys.email.data.local.PreferencesStore
 import ch.rhosys.email.data.repository.SettingsRepository
+import ch.rhosys.email.data.remote.dto.AccountUserDto
+import ch.rhosys.email.data.remote.dto.DnsRecordDto
+import ch.rhosys.email.data.remote.dto.DomainDto
+import ch.rhosys.email.data.remote.dto.ForwardingTargetDto
 import ch.rhosys.email.domain.model.Alias
-import ch.rhosys.email.domain.model.DnsRecord
-import ch.rhosys.email.domain.model.ForwardingAddress
-import ch.rhosys.email.domain.model.MfaDevice
-import ch.rhosys.email.domain.model.PlanInfo
-import ch.rhosys.email.domain.model.TeamMember
 import ch.rhosys.email.domain.repository.AccountRepository
 import ch.rhosys.email.ui.theme.CatppuccinFlavor
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,16 +20,18 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/**
+ * MFA devices and plan/billing are absent: the API exposes no endpoints for
+ * either. DNS records hang off an individual domain rather than the account.
+ */
 data class SettingsUiState(
     val aliases: List<Alias> = emptyList(),
-    val dnsRecords: List<DnsRecord> = emptyList(),
-    val forwardingAddresses: List<ForwardingAddress> = emptyList(),
-    val mfaDevices: List<MfaDevice> = emptyList(),
-    val teamMembers: List<TeamMember> = emptyList(),
-    val planInfo: PlanInfo? = null,
+    val domains: List<DomainDto> = emptyList(),
+    val dnsRecords: List<DnsRecordDto> = emptyList(),
+    val forwardingTargets: List<ForwardingTargetDto> = emptyList(),
+    val accountUsers: List<AccountUserDto> = emptyList(),
     val themeFlavor: CatppuccinFlavor? = null,
     val biometricLockEnabled: Boolean = false,
-    val adminPanelEnabled: Boolean = false,
 )
 
 class SettingsViewModel(
@@ -60,63 +61,67 @@ class SettingsViewModel(
         viewModelScope.launch {
             preferencesStore.biometricLockEnabled.collect { enabled -> _uiState.value = _uiState.value.copy(biometricLockEnabled = enabled) }
         }
-        viewModelScope.launch {
-            preferencesStore.adminPanelEnabled.collect { enabled -> _uiState.value = _uiState.value.copy(adminPanelEnabled = enabled) }
-        }
     }
 
-    fun loadForwardingAndDns() {
+    fun loadForwardingAndDomains() {
         val accountId = activeAccountId.value ?: return
         viewModelScope.launch {
-            runCatching { settingsRepository.getDnsRecords(accountId) }.onSuccess {
-                _uiState.value = _uiState.value.copy(dnsRecords = it)
+            runCatching { settingsRepository.getDomains(accountId) }.onSuccess { domains ->
+                _uiState.value = _uiState.value.copy(domains = domains)
+                // Records live on a domain, so pull them for the first one.
+                domains.firstOrNull()?.let { domain ->
+                    runCatching { settingsRepository.getDomainRecords(accountId, domain.domainId) }
+                        .onSuccess { _uiState.value = _uiState.value.copy(dnsRecords = it) }
+                }
             }
-            runCatching { settingsRepository.getForwardingAddresses(accountId) }.onSuccess {
-                _uiState.value = _uiState.value.copy(forwardingAddresses = it)
-            }
-        }
-    }
-
-    fun verifyDns() {
-        val accountId = activeAccountId.value ?: return
-        viewModelScope.launch {
-            runCatching { settingsRepository.verifyDnsRecords(accountId) }.onSuccess {
-                _uiState.value = _uiState.value.copy(dnsRecords = it)
+            runCatching { settingsRepository.getForwardingTargets(accountId) }.onSuccess {
+                _uiState.value = _uiState.value.copy(forwardingTargets = it)
             }
         }
     }
 
-    fun addForwardingAddress(email: String) {
+    fun addForwardingTarget(email: String) {
         val accountId = activeAccountId.value ?: return
         viewModelScope.launch {
-            runCatching { settingsRepository.addForwardingAddress(accountId, email) }.onSuccess {
-                _uiState.value = _uiState.value.copy(forwardingAddresses = _uiState.value.forwardingAddresses + it)
+            runCatching { settingsRepository.addForwardingTarget(accountId, email) }.onSuccess {
+                _uiState.value = _uiState.value.copy(forwardingTargets = _uiState.value.forwardingTargets + it)
             }
         }
     }
 
-    fun removeForwardingAddress(id: String) = viewModelScope.launch {
-        runCatching { settingsRepository.removeForwardingAddress(id) }
-        _uiState.value = _uiState.value.copy(forwardingAddresses = _uiState.value.forwardingAddresses.filterNot { it.id == id })
-    }
-
-    fun loadSecurityAndTeam() {
+    fun removeForwardingTarget(address: String) {
         val accountId = activeAccountId.value ?: return
         viewModelScope.launch {
-            runCatching { settingsRepository.getMfaDevices() }.onSuccess { _uiState.value = _uiState.value.copy(mfaDevices = it) }
-            runCatching { settingsRepository.getTeamMembers(accountId) }.onSuccess { _uiState.value = _uiState.value.copy(teamMembers = it) }
-            runCatching { settingsRepository.getPlanInfo(accountId) }.onSuccess { _uiState.value = _uiState.value.copy(planInfo = it) }
+            runCatching { settingsRepository.removeForwardingTarget(accountId, address) }
+            _uiState.value = _uiState.value.copy(
+                forwardingTargets = _uiState.value.forwardingTargets.filterNot { it.target == address },
+            )
         }
     }
 
-    fun removeMfaDevice(id: String) = viewModelScope.launch {
-        runCatching { settingsRepository.removeMfaDevice(id) }
-        _uiState.value = _uiState.value.copy(mfaDevices = _uiState.value.mfaDevices.filterNot { it.id == id })
+    fun verifyForwardingTarget(address: String) {
+        val accountId = activeAccountId.value ?: return
+        viewModelScope.launch {
+            runCatching { settingsRepository.verifyForwardingTarget(accountId, address) }.onSuccess { updated ->
+                _uiState.value = _uiState.value.copy(
+                    forwardingTargets = _uiState.value.forwardingTargets.map {
+                        if (it.target == updated.target) updated else it
+                    },
+                )
+            }
+        }
+    }
+
+    fun loadAccountUsers() {
+        val accountId = activeAccountId.value ?: return
+        viewModelScope.launch {
+            runCatching { settingsRepository.getAccountUsers(accountId) }
+                .onSuccess { _uiState.value = _uiState.value.copy(accountUsers = it) }
+        }
     }
 
     fun setThemeFlavor(flavor: CatppuccinFlavor?) = viewModelScope.launch { preferencesStore.setThemeFlavor(flavor) }
     fun setBiometricLockEnabled(enabled: Boolean) = viewModelScope.launch { preferencesStore.setBiometricLockEnabled(enabled) }
-    fun setAdminPanelEnabled(enabled: Boolean) = viewModelScope.launch { preferencesStore.setAdminPanelEnabled(enabled) }
 
     fun signOut() {
         authManager.signOut()

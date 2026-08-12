@@ -19,18 +19,25 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import ch.rhosys.email.EmailApp
 import ch.rhosys.email.MainActivity
-import ch.rhosys.email.domain.model.Folder
+import ch.rhosys.email.data.local.entity.ThreadEntity
+import ch.rhosys.email.domain.model.ThreadStatus
 import ch.rhosys.email.ui.theme.Mocha
 import kotlinx.coroutines.flow.first
 
-/** Decision #62: home screen widget showing the latest unread emails. */
+/**
+ * Home screen widget showing the most recent active threads. There is no unread
+ * count — the API has no read state — so the header reports the active total.
+ */
 class InboxWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val container = (context.applicationContext as EmailApp).appContainer
         val accountId = container.tokenStore.activeAccountId
-        val threads = if (accountId != null) {
-            runCatching { container.database.threadDao().observeByFolder(accountId, Folder.ACTIVE.name).first() }
-                .getOrDefault(emptyList())
+        val threads: List<ThreadEntity> = if (accountId != null) {
+            runCatching {
+                container.database.threadDao()
+                    .observeByStatus(accountId, ThreadStatus.ACTIVE.wire)
+                    .first()
+            }.getOrDefault(emptyList())
         } else {
             emptyList()
         }
@@ -44,7 +51,7 @@ class InboxWidget : GlanceAppWidget() {
                     .clickable(actionStartActivity<MainActivity>()),
             ) {
                 Text(
-                    "Inbox (${threads.count { !it.isRead }} unread)",
+                    "Inbox (${threads.size})",
                     style = TextStyle(color = ColorProvider(Mocha.text), fontWeight = FontWeight.Bold),
                 )
                 threads.take(5).forEach { thread ->

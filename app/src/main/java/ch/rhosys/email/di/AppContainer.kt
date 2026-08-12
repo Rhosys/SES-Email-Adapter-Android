@@ -9,13 +9,11 @@ import ch.rhosys.email.data.local.EmailDatabase
 import ch.rhosys.email.data.remote.api.AuthInterceptor
 import ch.rhosys.email.data.remote.api.EmailApiService
 import ch.rhosys.email.data.repository.AccountRepositoryImpl
-import ch.rhosys.email.data.repository.AdminRepository
 import ch.rhosys.email.data.repository.ComposeRepositoryImpl
 import ch.rhosys.email.data.repository.LabelRepositoryImpl
 import ch.rhosys.email.data.repository.RuleRepositoryImpl
 import ch.rhosys.email.data.repository.SettingsRepository
 import ch.rhosys.email.data.repository.StatsRepository
-import ch.rhosys.email.data.repository.SupportRepository
 import ch.rhosys.email.data.repository.TemplateRepositoryImpl
 import ch.rhosys.email.data.repository.ThreadRepositoryImpl
 import ch.rhosys.email.domain.repository.AccountRepository
@@ -42,7 +40,11 @@ class AppContainer(private val context: Context) {
     val authManager: AuthressAuthManager by lazy { AuthressAuthManager(context, tokenStore) }
 
     private val moshi: Moshi by lazy {
-        Moshi.Builder().build()
+        // SignalDto is a polymorphic union discriminated by `type`; Moshi needs the
+        // factory to pick the concrete variant before deserializing.
+        Moshi.Builder()
+            .add(ch.rhosys.email.data.remote.dto.SignalDtoAdapter.Factory)
+            .build()
     }
 
     private val okHttpClient: OkHttpClient by lazy {
@@ -68,7 +70,11 @@ class AppContainer(private val context: Context) {
     }
 
     val database: EmailDatabase by lazy {
-        Room.databaseBuilder(context, EmailDatabase::class.java, EmailDatabase.NAME).build()
+        // The v1 schema described an API that does not exist, so there is nothing
+        // worth migrating — the cache simply refetches against the real one.
+        Room.databaseBuilder(context, EmailDatabase::class.java, EmailDatabase.NAME)
+            .fallbackToDestructiveMigration()
+            .build()
     }
 
     val accountRepository: AccountRepository by lazy {
@@ -76,11 +82,11 @@ class AppContainer(private val context: Context) {
     }
 
     val threadRepository: ThreadRepository by lazy {
-        ThreadRepositoryImpl(context, apiService, database)
+        ThreadRepositoryImpl(apiService, database)
     }
 
     val composeRepository: ComposeRepository by lazy {
-        ComposeRepositoryImpl(apiService, database.draftDao())
+        ComposeRepositoryImpl(apiService, database.signalDao())
     }
 
     val labelRepository: LabelRepository by lazy {
@@ -97,14 +103,8 @@ class AppContainer(private val context: Context) {
 
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(apiService) }
     val statsRepository: StatsRepository by lazy { StatsRepository(apiService) }
-    val adminRepository: AdminRepository by lazy { AdminRepository(apiService) }
-    val supportRepository: SupportRepository by lazy { SupportRepository(apiService) }
 
     val preferencesStore: ch.rhosys.email.data.local.PreferencesStore by lazy {
         ch.rhosys.email.data.local.PreferencesStore(context)
-    }
-
-    val pendingSendManager: ch.rhosys.email.sync.PendingSendManager by lazy {
-        ch.rhosys.email.sync.PendingSendManager(context, composeRepository)
     }
 }

@@ -9,25 +9,35 @@ import androidx.room.Update
 import ch.rhosys.email.data.local.entity.ThreadEntity
 import kotlinx.coroutines.flow.Flow
 
+/**
+ * Threads are filtered by `status` rather than a folder column, and there is no
+ * read/unread state to query — the API models neither.
+ */
 @Dao
 interface ThreadDao {
-    @Query("SELECT * FROM threads WHERE accountId = :accountId AND folder = :folder ORDER BY lastMessageAt DESC")
-    fun pagingSource(accountId: String, folder: String): PagingSource<Int, ThreadEntity>
+    @Query("SELECT * FROM threads WHERE accountId = :accountId AND status = :status ORDER BY lastSignalAt DESC")
+    fun pagingSource(accountId: String, status: String): PagingSource<Int, ThreadEntity>
 
-    @Query("SELECT * FROM threads WHERE accountId = :accountId AND folder = :folder ORDER BY lastMessageAt DESC")
-    fun observeByFolder(accountId: String, folder: String): Flow<List<ThreadEntity>>
+    @Query("SELECT * FROM threads WHERE accountId = :accountId AND status = :status ORDER BY lastSignalAt DESC")
+    fun observeByStatus(accountId: String, status: String): Flow<List<ThreadEntity>>
 
-    @Query("SELECT * FROM threads WHERE id = :id")
-    fun observeById(id: String): Flow<ThreadEntity?>
+    @Query(
+        "SELECT * FROM threads WHERE accountId = :accountId AND status = :status " +
+            "AND labels LIKE '%' || :label || '%' ORDER BY lastSignalAt DESC",
+    )
+    fun observeByLabel(accountId: String, status: String, label: String): Flow<List<ThreadEntity>>
+
+    @Query("SELECT * FROM threads WHERE threadId = :threadId")
+    fun observeById(threadId: String): Flow<ThreadEntity?>
 
     @Query(
         "SELECT * FROM threads WHERE accountId = :accountId AND (subject LIKE '%' || :query || '%' " +
-            "OR snippet LIKE '%' || :query || '%')" +
-            " ORDER BY lastMessageAt DESC",
+            "OR summary LIKE '%' || :query || '%' OR senderAddress LIKE '%' || :query || '%') " +
+            "ORDER BY lastSignalAt DESC",
     )
     fun search(accountId: String, query: String): Flow<List<ThreadEntity>>
 
-    @Query("SELECT * FROM threads WHERE folder = 'ARCHIVED' AND followupAt IS NOT NULL AND followupAt <= :now")
+    @Query("SELECT * FROM threads WHERE followupAt IS NOT NULL AND followupAt <= :now")
     suspend fun dueFollowups(now: Long): List<ThreadEntity>
 
     @Query("SELECT * FROM threads WHERE isPendingSync = 1")
@@ -42,12 +52,18 @@ interface ThreadDao {
     @Update
     suspend fun update(thread: ThreadEntity)
 
-    @Query("UPDATE threads SET folder = :folder, followupAt = :followupAt, isPendingSync = 1, updatedAt = :now WHERE id = :id")
-    suspend fun moveToFolder(id: String, folder: String, followupAt: Long?, now: Long)
+    @Query(
+        "UPDATE threads SET status = :status, followupAt = :followupAt, isPendingSync = 1, " +
+            "updatedAt = :now WHERE threadId = :threadId",
+    )
+    suspend fun setStatus(threadId: String, status: String, followupAt: Long?, now: Long)
 
-    @Query("UPDATE threads SET isRead = 1 WHERE id = :id")
-    suspend fun markRead(id: String)
+    @Query("UPDATE threads SET labels = :labels, isPendingSync = 1, updatedAt = :now WHERE threadId = :threadId")
+    suspend fun setLabels(threadId: String, labels: String, now: Long)
 
-    @Query("DELETE FROM threads WHERE id = :id")
-    suspend fun delete(id: String)
+    @Query("DELETE FROM threads WHERE threadId = :threadId")
+    suspend fun delete(threadId: String)
+
+    @Query("DELETE FROM threads WHERE accountId = :accountId")
+    suspend fun clearAccount(accountId: String)
 }
