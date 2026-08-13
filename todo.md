@@ -12,44 +12,30 @@ Now defaults to `app_2EAWGEdtzaeCj7b45DsDtt`, taken from the web app's
 `VITE_AUTHRESS_APPLICATION_ID`. Still overridable with
 `-PauthressApplicationId=<id>` per environment.
 
-### ~~OAuth endpoints~~ — resolved
+### ~~OAuth endpoints and redirect handling~~ — resolved
 
-The hardcoded `/authorize` and `/oauth/token` paths were invented and neither
-exists. Authress publishes discovery at
-`https://login.rhosys.cloud/.well-known/openid-configuration`:
+Authress is not a plain OAuth provider, so there is no authorize/token exchange
+to point at. The app now ports @authress/login-react-native directly:
 
 ```
-authorization_endpoint  https://login.rhosys.cloud            (the issuer root)
-token_endpoint          https://login.rhosys.cloud/api/authentication/oauth/tokens
-code_challenge_methods  S256
-scopes_supported        openid, profile
+POST /api/authentication                              -> authenticationUrl + authenticationRequestId
+open authenticationUrl in a Custom Tab (the real browser, so passkeys work)
+redirect to ch.rhosys.email://auth/callback           -> code + authenticationRequestId
+POST /api/authentication/{id}/tokens                  -> session cookies
 ```
 
-AuthressAuthManager now discovers these at runtime via
-`AuthorizationServiceConfiguration.fetchFromIssuer` instead of hardcoding paths.
-The requested scope dropped `email` and `offline_access`, neither of which is
-advertised; refresh tokens come from the `refresh_token` grant, which is.
+The session lives in the `authorization` and `user` cookies rather than an
+access/refresh pair. `userIsLoggedIn()` refreshes it via `PATCH /session` and is
+called on every route change, per the SDK's own recommendation; `waitForToken()`
+supplies the Authorization header.
 
-### OAuth redirect is claimed twice
+The duplicate redirect claim is gone with AppAuth: MainActivity is now the only
+component matching the scheme, and it forwards the redirect through
+`onNewIntent` as the SDK's Android setup describes.
 
-`MainActivity` declares an intent filter for `ch.rhosys.email:/oauth2redirect`
-(`AndroidManifest.xml`), and AppAuth's own `RedirectUriReceiverActivity` claims
-the same scheme through the `appAuthRedirectScheme` manifest placeholder
-(`app/build.gradle.kts`). Two components match the same redirect, so resolution
-is non-deterministic.
-
-If MainActivity wins, sign-in breaks silently: it never reads the incoming
-intent — there is no `onNewIntent` override and `getIntent()` appears nowhere in
-`app/src` — so the authorization code is dropped. AppAuth needs its own receiver
-to complete the exchange, which makes the comment on the placeholder
-("our redirect is actually captured by MainActivity's intent-filter") backwards.
-
-Fix is most likely to delete the MainActivity filter and let AppAuth handle it.
-Worth doing alongside the Authress application id, since both block login.
-
-Separately, a custom-scheme redirect can be registered by any app on the device.
-Prefer an HTTPS App Link redirect on `email.rhosys.cloud` once assetlinks.json is
-served (see the Play Store section).
+The browser deliberately does not share cookies with the app — it does not need
+to. The token exchange is made by the app's own HTTP client, so the session
+cookie arrives there.
 
 ### App name
 
@@ -99,7 +85,7 @@ can come back.
 | Compose a new thread | Drafts post to `/threads/{threadId}/signals`; there is no route for a draft with no thread. Reply and forward work |
 | Send later / undo send | No scheduling parameter, no cancel route. Sending is immediate |
 | Attachment download | Attachments carry a fixed `url` and are opened directly; there is no download endpoint |
-| MFA / passkey management | No endpoints |
+| MFA / passkey management | Not on the email API — but the login service has `GET`/`DELETE /api/session/devices`, which the SDK exposes as getDevices/deleteDevice. The Settings tab could be rebuilt against those |
 | Billing | `billingPlan` is readable on an account, but there are no billing endpoints |
 | Support tickets | No endpoint. `SupportData` in the spec is a signal workflow type, not a ticket API |
 | Per-address sender blocking | Sender policy applies to a whole domain on an alias |
