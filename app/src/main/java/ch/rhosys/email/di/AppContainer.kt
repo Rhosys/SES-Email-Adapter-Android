@@ -57,7 +57,7 @@ class AppContainer(private val context: Context) {
 
     private val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .addInterceptor(AuthInterceptor { authManager.getToken() })
+            .addInterceptor(AuthInterceptor { authManager.waitForToken() })
             .apply {
                 if (BuildConfig.DEBUG) {
                     addInterceptor(HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.BASIC))

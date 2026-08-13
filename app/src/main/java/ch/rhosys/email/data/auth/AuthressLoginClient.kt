@@ -8,6 +8,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -180,6 +182,27 @@ class AuthressLoginClient(
             patch("/session", JSONObject())
             (getToken() != null).also { _sessionEstablished.value = it }
         }.getOrDefault(false)
+    }
+
+    /**
+     * Waits until a bearer token is available, then returns it. Blocks until
+     * [authenticate] plus [completeAuthenticationRequest], or [userIsLoggedIn],
+     * establishes a session. This is the SDK's documented way to obtain the value
+     * for an Authorization header, and is what [ch.rhosys.email.data.remote.api.AuthInterceptor]
+     * uses — reading the cookie directly would race a session that is mid-refresh.
+     *
+     * Returns null if no token arrives within [timeoutInMillis]; 0 means do not
+     * wait at all, matching the SDK.
+     */
+    suspend fun waitForToken(timeoutInMillis: Long = 5000): String? {
+        getToken()?.let { return it }
+        if (timeoutInMillis == 0L) return null
+
+        return withTimeoutOrNull(timeoutInMillis) {
+            // Resolved by completeAuthenticationRequest or a successful session check.
+            _sessionEstablished.first { it }
+            getToken()
+        }
     }
 
     /** Ends the server session first, while the cookie can still identify it. */

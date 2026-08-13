@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import ch.rhosys.email.di.LocalAppContainer
@@ -64,6 +65,14 @@ fun RootNavGraph() {
 private fun AppNavHost() {
     val navController = rememberNavController()
     val container = LocalAppContainer.current
+
+    // The login SDK recommends calling userIsLoggedIn on every route change: it
+    // is what revalidates the session and refreshes an expired token, via
+    // PATCH /session. Without it a stale bearer is sent until the app restarts.
+    val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
+    LaunchedEffect(currentRoute) {
+        container.authManager.userIsLoggedIn()
+    }
 
     AppScaffold(navController) { modifier ->
         NavHost(navController = navController, startDestination = Destination.Inbox.route, modifier = modifier) {
