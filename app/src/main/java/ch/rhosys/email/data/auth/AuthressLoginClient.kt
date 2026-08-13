@@ -64,6 +64,9 @@ class AuthressLoginClient(
     val sessionEstablished: StateFlow<Boolean> = _sessionEstablished.asStateFlow()
 
     init {
+        // The SDK restores cookies from encrypted storage in its constructor,
+        // before anything reads a token.
+        cookieJar.restoreCookies()
         _sessionEstablished.value = getToken() != null
     }
 
@@ -142,6 +145,7 @@ class AuthressLoginClient(
             throw e
         }
 
+        cookieJar.backupCookies()
         storage.setAuthenticationRequest(null)
         _sessionEstablished.value = getToken() != null
     }
@@ -180,7 +184,9 @@ class AuthressLoginClient(
         if (getToken() != null) return true
         return runCatching {
             patch("/session", JSONObject())
-            (getToken() != null).also { _sessionEstablished.value = it }
+            val loggedIn = getToken() != null
+            if (loggedIn) cookieJar.backupCookies()
+            loggedIn.also { _sessionEstablished.value = it }
         }.getOrDefault(false)
     }
 

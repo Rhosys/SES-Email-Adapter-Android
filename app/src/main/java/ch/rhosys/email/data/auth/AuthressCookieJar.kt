@@ -10,15 +10,18 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * The Authress session lives in cookies, not in a stored access/refresh token
- * pair — `authorization` carries the bearer token and `user` carries the identity
- * token. The React Native SDK keeps them in the native cookie jar and mirrors
- * them into encrypted storage so a session survives a process restart
- * (authStorageManager.backupCookies / restoreCookies).
+ * The Authress session lives in cookies rather than an access/refresh pair:
+ * `authorization` carries the bearer token and `user` carries the identity token.
  *
- * This is the OkHttp equivalent: an in-memory jar backed by
- * EncryptedSharedPreferences. When several calls set the same cookie name on
- * different paths, the last value written wins — the SDK's `lastValue`.
+ * Structured to match authStorageManager.ts. The SDK keeps two things — the
+ * platform cookie jar that its HTTP calls read and write, and a mirror of it in
+ * encrypted storage — and moves between them with explicit backupCookies and
+ * restoreCookies at defined points. That split is reproduced here rather than
+ * collapsed into a single always-persisted store, so the call sites line up with
+ * the SDK's one for one.
+ *
+ * `lastValue` behaviour is preserved: when several calls set the same cookie name
+ * on different paths, the last value written wins.
  */
 class AuthressCookieJar(context: Context, private val authressHost: String) : CookieJar {
 
@@ -30,27 +33,20 @@ class AuthressCookieJar(context: Context, private val authressHost: String) : Co
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
     )
 
-    /** name -> value, last write wins. */
+    /** The live jar, equivalent to the SDK's native cookie store. */
     private val cookies = linkedMapOf<String, String>()
-
-    init {
-        restore()
-    }
 
     @Synchronized
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
         if (!url.host.equals(authressHost, ignoreCase = true)) return
-        var changed = false
         cookies.forEach { cookie ->
             // An expiry in the past is a deletion.
             if (cookie.expiresAt < System.currentTimeMillis()) {
-                changed = this.cookies.remove(cookie.name) != null || changed
-            } else if (this.cookies[cookie.name] != cookie.value) {
+                this.cookies.remove(cookie.name)
+            } else {
                 this.cookies[cookie.name] = cookie.value
-                changed = true
             }
         }
-        if (changed) persist()
     }
 
     @Synchronized
@@ -76,13 +72,13 @@ class AuthressCookieJar(context: Context, private val authressHost: String) : Co
     @Synchronized
     fun userCookie(): String? = cookies[COOKIE_USER]
 
+    /**
+     * Mirrors the live jar into encrypted storage. The SDK calls this after a
+     * successful token exchange and after a successful session check.
+     */
     @Synchronized
-    fun clear() {
-        cookies.clear()
-        prefs.edit().remove(KEY_COOKIES).apply()
-    }
-
-    private fun persist() {
+    fun backupCookies() {
+        if (cookies.isEmpty()) return
         val array = JSONArray()
         cookies.forEach { (name, value) ->
             array.put(JSONObject().put("name", name).put("value", value))
@@ -90,7 +86,14 @@ class AuthressCookieJar(context: Context, private val authressHost: String) : Co
         prefs.edit().putString(KEY_COOKIES, array.toString()).apply()
     }
 
-    private fun restore() {
+    /**
+     * Repopulates the live jar from the backup, and only when the jar is empty —
+     * the SDK returns early if the platform store already holds cookies, so a
+     * live session is never overwritten by a stale mirror.
+     */
+    @Synchronized
+    fun restoreCookies() {
+        if (cookies.isNotEmpty()) return
         val raw = prefs.getString(KEY_COOKIES, null) ?: return
         runCatching {
             val array = JSONArray(raw)
@@ -99,6 +102,13 @@ class AuthressCookieJar(context: Context, private val authressHost: String) : Co
                 cookies[entry.getString("name")] = entry.getString("value")
             }
         }
+    }
+
+    /** Clears the live jar and the backup together. */
+    @Synchronized
+    fun clear() {
+        cookies.clear()
+        prefs.edit().remove(KEY_COOKIES).apply()
     }
 
     private companion object {
