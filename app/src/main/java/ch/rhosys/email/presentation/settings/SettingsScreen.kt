@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import ch.rhosys.email.di.LocalAppContainer
+import ch.rhosys.email.presentation.components.ThemePicker
 import ch.rhosys.email.presentation.components.rememberViewModel
 import ch.rhosys.email.ui.theme.CatppuccinFlavor
 

@@ -6,15 +6,29 @@ Open work on the Android app, most blocking first.
 
 ## Blocking a working build
 
-### Authress application ID
+### ~~Authress application ID~~ — resolved
 
-`app/build.gradle.kts` still defaults `authressApplicationId` to `numaeel_android`,
-a value invented alongside the fictional Numaeel product. Login against
-`login.rhosys.cloud` will fail until this is a real application registered in
-Authress.
+Now defaults to `app_2EAWGEdtzaeCj7b45DsDtt`, taken from the web app's
+`VITE_AUTHRESS_APPLICATION_ID`. Still overridable with
+`-PauthressApplicationId=<id>` per environment.
 
-Override per-environment with `-PauthressApplicationId=<id>`, or change the
-default once the real id is known.
+### ~~OAuth endpoints~~ — resolved
+
+The hardcoded `/authorize` and `/oauth/token` paths were invented and neither
+exists. Authress publishes discovery at
+`https://login.rhosys.cloud/.well-known/openid-configuration`:
+
+```
+authorization_endpoint  https://login.rhosys.cloud            (the issuer root)
+token_endpoint          https://login.rhosys.cloud/api/authentication/oauth/tokens
+code_challenge_methods  S256
+scopes_supported        openid, profile
+```
+
+AuthressAuthManager now discovers these at runtime via
+`AuthorizationServiceConfiguration.fetchFromIssuer` instead of hardcoding paths.
+The requested scope dropped `email` and `offline_access`, neither of which is
+advertised; refresh tokens come from the `refresh_token` grant, which is.
 
 ### OAuth redirect is claimed twice
 

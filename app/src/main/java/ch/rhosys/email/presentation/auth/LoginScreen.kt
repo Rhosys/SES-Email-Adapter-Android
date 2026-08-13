@@ -64,7 +64,13 @@ fun LoginScreen(onSignedIn: () -> Unit) {
         if (isLoading) {
             CircularProgressIndicator()
         } else {
-            Button(onClick = { isLoading = true; container.authManager.launchSignIn(launcher) }) {
+            Button(onClick = {
+                isLoading = true
+                scope.launch {
+                    container.authManager.launchSignIn(launcher)
+                        .onFailure { isLoading = false }
+                }
+            }) {
                 Text("Continue")
             }
         }

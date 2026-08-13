@@ -1,4 +1,4 @@
-package ch.rhosys.email.presentation.settings
+package ch.rhosys.email.presentation.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border

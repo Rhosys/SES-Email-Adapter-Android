@@ -6,7 +6,8 @@ import android.net.Uri
 import androidx.activity.result.ActivityResultLauncher
 import ch.rhosys.email.BuildConfig
 import kotlinx.coroutines.suspendCancellableCoroutine
-import net.openid.appauth.AuthState
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationResponse
@@ -18,33 +19,67 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * OIDC login against Authress (decision #6): social logins, passkeys, or
- * email/password are all handled by Authress's hosted login page — the app
- * only speaks standard OAuth2/OIDC via AppAuth, so no credential UI lives here.
+ * OIDC login against Authress. Social logins, passkeys and email/password are all
+ * handled by Authress's hosted login page, so no credential UI lives here.
+ *
+ * Endpoints are discovered from the issuer's /.well-known/openid-configuration
+ * rather than hardcoded. The previous hardcoded pair was wrong on both counts —
+ * Authress's authorization endpoint is the issuer root, not /authorize, and its
+ * token endpoint is /api/authentication/oauth/tokens, not /oauth/token — and
+ * discovery means a future change on Authress's side does not silently break
+ * sign-in again.
  */
 class AuthressAuthManager(private val context: Context, private val tokenStore: TokenStore) {
 
     private val service = AuthorizationService(context)
 
-    private val serviceConfig = AuthorizationServiceConfiguration(
-        Uri.parse("https://${BuildConfig.AUTHRESS_CUSTOM_DOMAIN}/authorize"),
-        Uri.parse("https://${BuildConfig.AUTHRESS_CUSTOM_DOMAIN}/oauth/token"),
-    )
+    private val issuer = Uri.parse("https://${BuildConfig.AUTHRESS_CUSTOM_DOMAIN}")
 
     private val redirectUri = Uri.parse("${BuildConfig.OAUTH_REDIRECT_SCHEME}:/oauth2redirect")
 
-    fun buildAuthRequestIntent() = service.getAuthorizationRequestIntent(
-        AuthorizationRequest.Builder(
-            serviceConfig,
-            BuildConfig.AUTHRESS_APPLICATION_ID,
-            ResponseTypeValues.CODE,
-            redirectUri,
-        ).setScope("openid profile email offline_access").build(),
-    )
+    /** Discovered once per process, then reused. */
+    @Volatile
+    private var cachedConfig: AuthorizationServiceConfiguration? = null
 
-    fun launchSignIn(launcher: ActivityResultLauncher<android.content.Intent>) {
-        launcher.launch(buildAuthRequestIntent())
+    private val configMutex = Mutex()
+
+    private suspend fun serviceConfig(): AuthorizationServiceConfiguration {
+        cachedConfig?.let { return it }
+        return configMutex.withLock {
+            cachedConfig ?: fetchConfig().also { cachedConfig = it }
+        }
     }
+
+    private suspend fun fetchConfig(): AuthorizationServiceConfiguration =
+        suspendCancellableCoroutine { cont ->
+            AuthorizationServiceConfiguration.fetchFromIssuer(issuer) { config, ex ->
+                when {
+                    config != null -> cont.resume(config)
+                    else -> cont.resumeWithException(
+                        ex ?: IllegalStateException("Could not discover OIDC configuration at $issuer"),
+                    )
+                }
+            }
+        }
+
+    suspend fun buildAuthRequestIntent(): android.content.Intent =
+        service.getAuthorizationRequestIntent(
+            AuthorizationRequest.Builder(
+                serviceConfig(),
+                BuildConfig.AUTHRESS_APPLICATION_ID,
+                ResponseTypeValues.CODE,
+                redirectUri,
+            )
+                // Only openid and profile are advertised in scopes_supported.
+                // Refresh tokens come from the refresh_token grant, which is
+                // advertised, rather than from an offline_access scope that is not.
+                .setScope("openid profile")
+                .build(),
+        )
+
+    /** Discovery is a network call, so signing in has to suspend. */
+    suspend fun launchSignIn(launcher: ActivityResultLauncher<android.content.Intent>): Result<Unit> =
+        runCatching { launcher.launch(buildAuthRequestIntent()) }
 
     suspend fun handleAuthResponse(data: android.content.Intent): Result<Unit> {
         val response = AuthorizationResponse.fromIntent(data)
@@ -72,10 +107,10 @@ class AuthressAuthManager(private val context: Context, private val tokenStore: 
 
     suspend fun refreshAccessToken(): Boolean {
         val refreshToken = tokenStore.refreshToken ?: return false
-        val authState = AuthState(serviceConfig)
+        val config = runCatching { serviceConfig() }.getOrNull() ?: return false
         return suspendCancellableCoroutine { cont ->
             service.performTokenRequest(
-                net.openid.appauth.TokenRequest.Builder(serviceConfig, BuildConfig.AUTHRESS_APPLICATION_ID)
+                net.openid.appauth.TokenRequest.Builder(config, BuildConfig.AUTHRESS_APPLICATION_ID)
                     .setGrantType(net.openid.appauth.GrantTypeValues.REFRESH_TOKEN)
                     .setRefreshToken(refreshToken)
                     .build(),

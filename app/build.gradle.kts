@@ -33,7 +33,9 @@ android {
         buildConfigField(
             "String",
             "AUTHRESS_APPLICATION_ID",
-            "\"${(findProperty("authressApplicationId") as? String) ?: "numaeel_android"}\"",
+            // Matches the web app's VITE_AUTHRESS_APPLICATION_ID; the previous
+            // value was invented and no such application exists in Authress.
+            "\"${(findProperty("authressApplicationId") as? String) ?: "app_2EAWGEdtzaeCj7b45DsDtt"}\"",
         )
         buildConfigField(
             "String",
@@ -42,8 +44,9 @@ android {
         )
 
         manifestPlaceholders["oauthRedirectScheme"] = "ch.rhosys.email"
-        // Required by the AppAuth library's own manifest (RedirectUriReceiverActivity),
-        // even though our redirect is actually captured by MainActivity's intent-filter below.
+        // AppAuth's own manifest declares RedirectUriReceiverActivity against this
+        // scheme, and that receiver is what completes the flow. MainActivity also
+        // declares a filter for the same scheme, which is a conflict — see todo.md.
         manifestPlaceholders["appAuthRedirectScheme"] = "ch.rhosys.email"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
