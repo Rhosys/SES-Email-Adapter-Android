@@ -41,7 +41,7 @@ fun RootNavGraph() {
         val onboarded = container.preferencesStore.hasCompletedOnboarding.first()
         gate = when {
             !onboarded -> RootGate.ONBOARDING
-            !container.tokenStore.isSignedIn -> RootGate.LOGIN
+            !container.authManager.isSignedIn -> RootGate.LOGIN
             else -> RootGate.APP
         }
     }
@@ -49,7 +49,7 @@ fun RootNavGraph() {
     when (gate) {
         RootGate.LOADING -> CircularProgressIndicator()
         RootGate.ONBOARDING -> OnboardingScreen(onFinished = {
-            gate = if (container.tokenStore.isSignedIn) RootGate.APP else RootGate.LOGIN
+            gate = if (container.authManager.isSignedIn) RootGate.APP else RootGate.LOGIN
         })
         RootGate.LOGIN -> LoginScreen(onSignedIn = { gate = RootGate.APP })
         RootGate.APP -> {

@@ -2,7 +2,7 @@ package ch.rhosys.email.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import ch.rhosys.email.data.auth.AuthressAuthManager
+import ch.rhosys.email.data.auth.AuthressLoginClient
 import ch.rhosys.email.data.local.PreferencesStore
 import ch.rhosys.email.data.repository.SettingsRepository
 import ch.rhosys.email.data.remote.dto.AccountUserDto
@@ -38,7 +38,7 @@ class SettingsViewModel(
     private val settingsRepository: SettingsRepository,
     private val accountRepository: AccountRepository,
     private val preferencesStore: PreferencesStore,
-    private val authManager: AuthressAuthManager,
+    private val authManager: AuthressLoginClient,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -123,7 +123,6 @@ class SettingsViewModel(
     fun setThemeFlavor(flavor: CatppuccinFlavor?) = viewModelScope.launch { preferencesStore.setThemeFlavor(flavor) }
     fun setBiometricLockEnabled(enabled: Boolean) = viewModelScope.launch { preferencesStore.setBiometricLockEnabled(enabled) }
 
-    fun signOut() {
-        authManager.signOut()
-    }
+    /** Ends the server session before clearing local cookies, as the SDK does. */
+    fun signOut() = viewModelScope.launch { authManager.logout() }
 }

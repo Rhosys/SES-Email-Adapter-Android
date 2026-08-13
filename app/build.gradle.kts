@@ -37,17 +37,14 @@ android {
             // value was invented and no such application exists in Authress.
             "\"${(findProperty("authressApplicationId") as? String) ?: "app_2EAWGEdtzaeCj7b45DsDtt"}\"",
         )
+        // Redirect target for the Authress login flow, in the scheme://host/path
+        // form the SDK documents. MainActivity is the only component that claims
+        // it — see its intent filter.
         buildConfigField(
             "String",
-            "OAUTH_REDIRECT_SCHEME",
-            "\"ch.rhosys.email\"",
+            "OAUTH_REDIRECT_URI",
+            "\"ch.rhosys.email://auth/callback\"",
         )
-
-        manifestPlaceholders["oauthRedirectScheme"] = "ch.rhosys.email"
-        // AppAuth's own manifest declares RedirectUriReceiverActivity against this
-        // scheme, and that receiver is what completes the flow. MainActivity also
-        // declares a filter for the same scheme, which is a conflict — see todo.md.
-        manifestPlaceholders["appAuthRedirectScheme"] = "ch.rhosys.email"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -142,7 +139,7 @@ dependencies {
 
     implementation(libs.security.crypto)
     implementation(libs.biometric)
-    implementation(libs.appauth)
+    implementation(libs.androidx.browser)
 
     implementation(libs.glance.appwidget)
     implementation(libs.glance.material3)

@@ -1,5 +1,6 @@
 package ch.rhosys.email
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.CompositionLocalProvider
@@ -10,17 +11,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import ch.rhosys.email.di.LocalAppContainer
 import ch.rhosys.email.presentation.auth.BiometricLockScreen
 import ch.rhosys.email.presentation.navigation.RootNavGraph
 import ch.rhosys.email.sync.SyncForegroundService
 import ch.rhosys.email.ui.theme.EmailTheme
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val appContainer = (application as EmailApp).appContainer
+
+        // The Authress redirect can arrive either as the intent that started the
+        // activity or, with launchMode=singleTask, through onNewIntent.
+        handleAuthRedirect(intent)
 
         setContent {
             val themeFlavor by appContainer.preferencesStore.themeFlavor.collectAsStateWithLifecycle(initialValue = null)
@@ -41,6 +48,24 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * The React Native SDK subscribes to Linking 'url' events for this; on native
+     * Android the equivalent is the launch intent plus onNewIntent, which is what
+     * the SDK's own Android setup instructions tell you to forward.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAuthRedirect(intent)
+    }
+
+    private fun handleAuthRedirect(intent: Intent?) {
+        val appContainer = (application as EmailApp).appContainer
+        val uri = intent?.data ?: return
+        if (!appContainer.authManager.isRedirect(uri)) return
+        lifecycleScope.launch { appContainer.authManager.completeAuthenticationRequest(uri) }
     }
 
     override fun onStart() {
