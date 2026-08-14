@@ -9,6 +9,7 @@ import ch.rhosys.email.data.auth.TokenStore
 import ch.rhosys.email.data.local.EmailDatabase
 import ch.rhosys.email.data.remote.api.AuthInterceptor
 import ch.rhosys.email.data.remote.api.EmailApiService
+import ch.rhosys.email.data.remote.api.UserAgentInterceptor
 import ch.rhosys.email.data.repository.AccountRepositoryImpl
 import ch.rhosys.email.data.repository.ComposeRepositoryImpl
 import ch.rhosys.email.data.repository.LabelRepositoryImpl
@@ -57,6 +58,7 @@ class AppContainer(private val context: Context) {
 
     private val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
+            .addInterceptor(UserAgentInterceptor())
             .addInterceptor(AuthInterceptor { authManager.waitForToken() })
             .apply {
                 if (BuildConfig.DEBUG) {

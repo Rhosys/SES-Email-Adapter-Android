@@ -85,11 +85,15 @@ class AuthressLoginClient(
         storage.setAuthenticationRequest(null)
 
         val codes = JwtManager.getAuthCodes()
+        val antiAbuseHash = JwtManager.calculateAntiAbuseHash(
+            mapOf("connectionId" to connectionId, "applicationId" to BuildConfig.AUTHRESS_APPLICATION_ID),
+        )
         val body = JSONObject()
             .put("redirectUrl", redirectUri)
             .put("applicationId", BuildConfig.AUTHRESS_APPLICATION_ID)
             .put("codeChallenge", codes.codeChallenge)
             .put("codeChallengeMethod", "S256")
+            .put("antiAbuseHash", antiAbuseHash)
             .apply { connectionId?.let { put("connectionId", it) } }
 
         val response = post("/authentication", body)
@@ -127,10 +131,18 @@ class AuthressLoginClient(
             throw AuthressException("Authentication request mismatch")
         }
 
+        val antiAbuseHash = JwtManager.calculateAntiAbuseHash(
+            mapOf(
+                "applicationId" to BuildConfig.AUTHRESS_APPLICATION_ID,
+                "authenticationRequestId" to authenticationRequestId,
+                "code" to code,
+            ),
+        )
         val body = JSONObject()
             .put("code", code)
             .put("codeVerifier", pending.codeVerifier)
             .put("redirectUri", pending.redirectUrl)
+            .put("antiAbuseHash", antiAbuseHash)
 
         try {
             post("/authentication/$authenticationRequestId/tokens", body)
