@@ -37,6 +37,26 @@ The browser deliberately does not share cookies with the app — it does not nee
 to. The token exchange is made by the app's own HTTP client, so the session
 cookie arrives there.
 
+### ~~Anti-abuse hash and SDK parity~~ — resolved
+
+`AuthressLoginClient` was never sending `antiAbuseHash` on `/authentication` or
+`/authentication/{id}/tokens`, and only Authress calls carried an identifying
+header while every request — Authress and Email API alike — fell back to
+OkHttp's default `User-Agent`. Fixed:
+
+- `JwtManager.calculateAntiAbuseHash` ports the SDK's proof-of-work (search a
+  `fineTuner` until `base64url(SHA-256(timestamp;fineTuner;values))` starts
+  with `"00"`), wired into every Authress call that needs one, with the prop
+  order matching `@authress/login` (web) call-for-call.
+- `UserAgentInterceptor` on the shared `OkHttpClient` stamps a real
+  `User-Agent` on every request.
+- Compared against `@authress/login` (web) for method parity and added what
+  the RN SDK has but this port didn't: `linkIdentity`, `getUserProfile`,
+  `getDevices`, `deleteDevice` (closes the MFA/passkey gap below — the
+  underlying calls exist now, a Settings UI for device management doesn't).
+- Failures from any Authress call now go through `AppLogger` and are visible
+  in Settings > Logs, which the user can share to report a problem.
+
 ### App name
 
 The user-visible name is still **Numaeel**, an invented brand. It appears in:
@@ -85,7 +105,7 @@ can come back.
 | Compose a new thread | Drafts post to `/threads/{threadId}/signals`; there is no route for a draft with no thread. Reply and forward work |
 | Send later / undo send | No scheduling parameter, no cancel route. Sending is immediate |
 | Attachment download | Attachments carry a fixed `url` and are opened directly; there is no download endpoint |
-| MFA / passkey management | Not on the email API — but the login service has `GET`/`DELETE /api/session/devices`, which the SDK exposes as getDevices/deleteDevice. The Settings tab could be rebuilt against those |
+| MFA / passkey management UI | `AuthressLoginClient.getUserProfile/getDevices/deleteDevice` now exist (see resolved note above); there is still no Settings UI backed by them |
 | Billing | `billingPlan` is readable on an account, but there are no billing endpoints |
 | Support tickets | No endpoint. `SupportData` in the spec is a signal workflow type, not a ticket API |
 | Per-address sender blocking | Sender policy applies to a whole domain on an alias |

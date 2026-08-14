@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 import ch.rhosys.email.BuildConfig
+import ch.rhosys.email.data.log.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,10 +16,14 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 
 /**
- * Port of loginClient.ts from @authress/login-react-native.
+ * Port of loginClient.ts from @authress/login-react-native, cross-checked
+ * against the more complete @authress/login (web) SDK for antiAbuseHash
+ * ordering and the session/device/profile endpoints the RN SDK also exposes.
  *
  * Authress is not a plain OAuth provider and this is deliberately not an
  * authorize/token exchange. The flow the SDK implements is:
@@ -35,11 +40,18 @@ import org.json.JSONObject
  *
  * The session is then held in cookies rather than in a token pair —
  * see [AuthressCookieJar].
+ *
+ * Every request carries an `antiAbuseHash` (a proof-of-work computed by
+ * [JwtManager.calculateAntiAbuseHash]) — Authress rejects `/authentication`
+ * and `/authentication/{id}/tokens` calls without one. The prop order passed
+ * into that hash matters (it's part of what's hashed), so each call site
+ * below mirrors the exact key order the web SDK uses for the equivalent call.
  */
 class AuthressLoginClient(
     private val context: Context,
     private val cookieJar: AuthressCookieJar,
     httpClient: OkHttpClient,
+    private val logger: AppLogger,
 ) {
     /** The SDK's HttpClient appends /api to the origin; every path below is relative to it. */
     private val loginUrl = "https://${BuildConfig.AUTHRESS_CUSTOM_DOMAIN}/api"
@@ -75,22 +87,59 @@ class AuthressLoginClient(
         val authenticationRequestId: String,
     )
 
+    /** Mirrors the web SDK's AuthenticationParameters that make sense for a native app (redirectUrl is fixed to the app's own deep link). */
+    data class AuthenticationOptions(
+        val connectionId: String? = null,
+        val tenantLookupIdentifier: String? = null,
+        val inviteId: String? = null,
+        val responseLocation: String? = null,
+        val flowType: String? = null,
+        val scopes: List<String>? = null,
+        val audiences: List<String>? = null,
+        val connectionProperties: Map<String, String>? = null,
+        val multiAccount: Boolean? = null,
+    )
+
+    data class Device(val deviceId: String, val name: String)
+
     // ── authenticate ────────────────────────────────────────────────────────
 
     /**
      * Begins the login flow and opens the Authress-hosted login page. Returns
      * once the browser has been launched; completion arrives via the deep link.
      */
-    suspend fun authenticate(connectionId: String? = null): Result<Unit> = runCatching {
+    suspend fun authenticate(options: AuthenticationOptions = AuthenticationOptions()): Result<Unit> = runCatching {
         storage.setAuthenticationRequest(null)
 
         val codes = JwtManager.getAuthCodes()
+        // Key order matches @authress/login's authenticate(): connectionId,
+        // tenantLookupIdentifier, inviteId, applicationId, audiences.
+        val antiAbuseHash = JwtManager.calculateAntiAbuseHash(
+            linkedMapOf(
+                "connectionId" to options.connectionId,
+                "tenantLookupIdentifier" to options.tenantLookupIdentifier,
+                "inviteId" to options.inviteId,
+                "applicationId" to BuildConfig.AUTHRESS_APPLICATION_ID,
+                "audiences" to options.audiences,
+            ),
+        )
         val body = JSONObject()
             .put("redirectUrl", redirectUri)
             .put("applicationId", BuildConfig.AUTHRESS_APPLICATION_ID)
             .put("codeChallenge", codes.codeChallenge)
             .put("codeChallengeMethod", "S256")
-            .apply { connectionId?.let { put("connectionId", it) } }
+            .put("antiAbuseHash", antiAbuseHash)
+            .apply {
+                options.connectionId?.let { put("connectionId", it) }
+                options.tenantLookupIdentifier?.let { put("tenantLookupIdentifier", it) }
+                options.inviteId?.let { put("inviteId", it) }
+                options.responseLocation?.let { put("responseLocation", it) }
+                options.flowType?.let { put("flowType", it) }
+                options.scopes?.let { put("scopes", JSONArray(it)) }
+                options.audiences?.let { put("audiences", JSONArray(it)) }
+                options.connectionProperties?.let { put("connectionProperties", JSONObject(it)) }
+                options.multiAccount?.let { put("multiAccount", it) }
+            }
 
         val response = post("/authentication", body)
         val authenticationUrl = response.getString("authenticationUrl")
@@ -107,7 +156,7 @@ class AuthressLoginClient(
         withContext(Dispatchers.Main) {
             CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(authenticationUrl))
         }
-    }
+    }.onFailure { logger.error("Authress", "authenticate() failed", it) }
 
     // ── completeAuthenticationRequest ───────────────────────────────────────
 
@@ -127,10 +176,20 @@ class AuthressLoginClient(
             throw AuthressException("Authentication request mismatch")
         }
 
+        // Key order matches @authress/login's token exchange: client_id
+        // (applicationId), authenticationRequestId, code.
+        val antiAbuseHash = JwtManager.calculateAntiAbuseHash(
+            linkedMapOf(
+                "applicationId" to BuildConfig.AUTHRESS_APPLICATION_ID,
+                "authenticationRequestId" to authenticationRequestId,
+                "code" to code,
+            ),
+        )
         val body = JSONObject()
             .put("code", code)
             .put("codeVerifier", pending.codeVerifier)
             .put("redirectUri", pending.redirectUrl)
+            .put("antiAbuseHash", antiAbuseHash)
 
         try {
             post("/authentication/$authenticationRequestId/tokens", body)
@@ -148,7 +207,7 @@ class AuthressLoginClient(
         cookieJar.backupCookies()
         storage.setAuthenticationRequest(null)
         _sessionEstablished.value = getToken() != null
-    }
+    }.onFailure { logger.error("Authress", "completeAuthenticationRequest() failed", it) }
 
     /** True when the redirect belongs to this client. */
     fun isRedirect(uri: Uri?): Boolean =
@@ -219,7 +278,96 @@ class AuthressLoginClient(
         _sessionEstablished.value = false
     }
 
+    // ── linkIdentity ────────────────────────────────────────────────────────
+
+    /**
+     * Links a new identity to the currently signed-in user, following the same
+     * `/authentication` + deep-link flow as [authenticate] (the redirect lands
+     * back in [completeAuthenticationRequest]), but with `linkIdentity: true`.
+     * Requires an existing session. Mirrors the RN SDK's `linkIdentity`, plus
+     * the antiAbuseHash the web SDK sends for the same call.
+     */
+    suspend fun linkIdentity(connectionId: String? = null, tenantLookupIdentifier: String? = null): Result<AuthenticationResponse> = runCatching {
+        if (connectionId == null && tenantLookupIdentifier == null) {
+            throw AuthressException("connectionId or tenantLookupIdentifier must be specified")
+        }
+        if (getToken() == null) throw AuthressException("Not logged in")
+
+        storage.setAuthenticationRequest(null)
+        val codes = JwtManager.getAuthCodes()
+        // Key order matches @authress/login's linkIdentity(): connectionId,
+        // tenantLookupIdentifier, applicationId.
+        val antiAbuseHash = JwtManager.calculateAntiAbuseHash(
+            linkedMapOf(
+                "connectionId" to connectionId,
+                "tenantLookupIdentifier" to tenantLookupIdentifier,
+                "applicationId" to BuildConfig.AUTHRESS_APPLICATION_ID,
+            ),
+        )
+        val body = JSONObject()
+            .put("redirectUrl", redirectUri)
+            .put("applicationId", BuildConfig.AUTHRESS_APPLICATION_ID)
+            .put("codeChallenge", codes.codeChallenge)
+            .put("codeChallengeMethod", "S256")
+            .put("linkIdentity", true)
+            .put("antiAbuseHash", antiAbuseHash)
+            .apply {
+                connectionId?.let { put("connectionId", it) }
+                tenantLookupIdentifier?.let { put("tenantLookupIdentifier", it) }
+            }
+
+        val response = post("/authentication", body)
+        val authenticationUrl = response.getString("authenticationUrl")
+        val authenticationRequestId = response.getString("authenticationRequestId")
+
+        storage.setAuthenticationRequest(
+            AuthStorageManager.PendingAuthentication(
+                codeVerifier = codes.codeVerifier,
+                authenticationRequestId = authenticationRequestId,
+                redirectUrl = redirectUri,
+            ),
+        )
+
+        withContext(Dispatchers.Main) {
+            CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(authenticationUrl))
+        }
+        AuthenticationResponse(authenticationUrl, authenticationRequestId)
+    }.onFailure { logger.error("Authress", "linkIdentity() failed", it) }
+
+    // ── profile & devices ──────────────────────────────────────────────────
+
+    /** The signed-in user's full profile, including linked identities. */
+    suspend fun getUserProfile(): Result<JSONObject> = runCatching {
+        if (getToken() == null) throw AuthressException("Not logged in")
+        get("/session/profile")
+    }.onFailure { logger.error("Authress", "getUserProfile() failed", it) }
+
+    /** MFA devices registered to the current user; empty (not an error) if none exist or the user is signed out. */
+    suspend fun getDevices(): Result<List<Device>> = runCatching {
+        if (getToken() == null) return@runCatching emptyList()
+        val response = try {
+            get("/session/devices")
+        } catch (e: AuthressException) {
+            if (e.status == 401 || e.status == 404) return@runCatching emptyList()
+            throw e
+        }
+        val devices = response.optJSONArray("devices") ?: JSONArray()
+        (0 until devices.length()).map { index ->
+            val device = devices.getJSONObject(index)
+            Device(deviceId = device.getString("deviceId"), name = device.optString("name"))
+        }
+    }.onFailure { logger.error("Authress", "getDevices() failed", it) }
+
+    /** Removes an MFA device from the current user's profile. */
+    suspend fun deleteDevice(deviceId: String): Result<Unit> = runCatching {
+        delete("/session/devices/$deviceId")
+        Unit
+    }.onFailure { logger.error("Authress", "deleteDevice() failed", it) }
+
     // ── HTTP ────────────────────────────────────────────────────────────────
+
+    private suspend fun get(path: String): JSONObject =
+        execute(Request.Builder().url(loginUrl + path).get())
 
     private suspend fun post(path: String, body: JSONObject): JSONObject =
         execute(Request.Builder().url(loginUrl + path).post(body.toBody()))
@@ -238,12 +386,20 @@ class AuthressLoginClient(
             .header("X-Powered-By", "Authress Login SDK; Android; ${BuildConfig.VERSION_NAME}")
             .build()
 
-        http.newCall(request).execute().use { response ->
-            val text = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
+        val response = try {
+            http.newCall(request).execute()
+        } catch (e: IOException) {
+            logger.warn("Authress", "${request.method} ${request.url.encodedPath} network failure", e)
+            throw e
+        }
+
+        response.use {
+            val text = it.body?.string().orEmpty()
+            if (!it.isSuccessful) {
+                logger.warn("Authress", "${request.method} ${request.url.encodedPath} failed: ${it.code} $text")
                 throw AuthressException(
-                    "Authress ${request.method} ${request.url.encodedPath} failed: ${response.code} $text",
-                    status = response.code,
+                    "Authress ${request.method} ${request.url.encodedPath} failed: ${it.code} $text",
+                    status = it.code,
                 )
             }
             runCatching { JSONObject(text) }.getOrDefault(JSONObject())

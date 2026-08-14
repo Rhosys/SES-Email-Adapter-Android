@@ -31,6 +31,39 @@ object JwtManager {
     }
 
     /**
+     * Proof-of-work anti-abuse hash required on `/authentication` and
+     * `/authentication/{id}/tokens` calls, matching the SDK's `calculateAntiAbuseHash`:
+     * a fine-tuner is searched until base64url(SHA-256("timestamp;fineTuner;valueString"))
+     * starts with "00". `valueString` is the non-empty prop values joined with "|" —
+     * plain objects (maps) are flattened by their sorted keys' values joined with "-";
+     * everything else, including lists, stringifies the way JS would when a value
+     * falls through untouched into `Array.prototype.join('|')`: a list joins its
+     * elements with "," (no brackets, unlike Kotlin's default `List.toString()`).
+     */
+    fun calculateAntiAbuseHash(props: Map<String, Any?>): String {
+        val timestamp = System.currentTimeMillis()
+        val valueString = props.values
+            .filterNot { it == null || it == "" || it == false }
+            .joinToString("|") { value ->
+                when (value) {
+                    is Map<*, *> -> value.keys.map { it.toString() }.sorted()
+                        .joinToString("-") { key -> value[key].toString() }
+                    is List<*> -> value.joinToString(",")
+                    else -> value.toString()
+                }
+            }
+
+        var fineTuner = 0
+        while (true) {
+            fineTuner++
+            val input = "$timestamp;$fineTuner;$valueString"
+            val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))
+            val hash = Base64.encodeToString(digest, B64_URL)
+            if (hash.startsWith("00")) return "v2;$timestamp;$fineTuner;$hash"
+        }
+    }
+
+    /**
      * Decodes a JWT payload without verifying the signature — the SDK does the same,
      * because the token arrives over TLS from the issuer it is then checked against.
      * `exp` is shortened by 10 seconds as a clock-skew buffer, matching the SDK.

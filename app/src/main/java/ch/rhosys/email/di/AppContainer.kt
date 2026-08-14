@@ -7,8 +7,10 @@ import ch.rhosys.email.data.auth.AuthressCookieJar
 import ch.rhosys.email.data.auth.AuthressLoginClient
 import ch.rhosys.email.data.auth.TokenStore
 import ch.rhosys.email.data.local.EmailDatabase
+import ch.rhosys.email.data.log.AppLogger
 import ch.rhosys.email.data.remote.api.AuthInterceptor
 import ch.rhosys.email.data.remote.api.EmailApiService
+import ch.rhosys.email.data.remote.api.UserAgentInterceptor
 import ch.rhosys.email.data.repository.AccountRepositoryImpl
 import ch.rhosys.email.data.repository.ComposeRepositoryImpl
 import ch.rhosys.email.data.repository.LabelRepositoryImpl
@@ -24,6 +26,9 @@ import ch.rhosys.email.domain.repository.RuleRepository
 import ch.rhosys.email.domain.repository.TemplateRepository
 import ch.rhosys.email.domain.repository.ThreadRepository
 import com.squareup.moshi.Moshi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -37,14 +42,19 @@ import java.util.concurrent.TimeUnit
  */
 class AppContainer(private val context: Context) {
 
+    /** Long-lived scope for background writes (log entries) that must outlive any single screen. */
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     val tokenStore: TokenStore by lazy { TokenStore(context) }
+
+    val appLogger: AppLogger by lazy { AppLogger(database.logDao(), appScope) }
 
     private val cookieJar: AuthressCookieJar by lazy {
         AuthressCookieJar(context, BuildConfig.AUTHRESS_CUSTOM_DOMAIN)
     }
 
     val authManager: AuthressLoginClient by lazy {
-        AuthressLoginClient(context, cookieJar, okHttpClient)
+        AuthressLoginClient(context, cookieJar, okHttpClient, appLogger)
     }
 
     private val moshi: Moshi by lazy {
@@ -57,6 +67,7 @@ class AppContainer(private val context: Context) {
 
     private val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
+            .addInterceptor(UserAgentInterceptor())
             .addInterceptor(AuthInterceptor { authManager.waitForToken() })
             .apply {
                 if (BuildConfig.DEBUG) {
