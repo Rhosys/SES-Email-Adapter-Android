@@ -1,6 +1,8 @@
 package ch.rhosys.email.presentation.settings
 
+import android.content.Intent
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,11 +29,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import ch.rhosys.email.data.local.entity.LogEntryEntity
 import ch.rhosys.email.di.LocalAppContainer
 import ch.rhosys.email.presentation.components.ThemePicker
 import ch.rhosys.email.presentation.components.rememberViewModel
 import ch.rhosys.email.ui.theme.CatppuccinFlavor
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun SettingsScreen(
@@ -40,13 +46,19 @@ fun SettingsScreen(
 ) {
     val container = LocalAppContainer.current
     val viewModel = rememberViewModel {
-        SettingsViewModel(container.settingsRepository, container.accountRepository, container.preferencesStore, container.authManager)
+        SettingsViewModel(
+            container.settingsRepository,
+            container.accountRepository,
+            container.preferencesStore,
+            container.authManager,
+            container.appLogger,
+        )
     }
     val uiState by viewModel.uiState.collectAsState()
     var tabIndex by remember { mutableStateOf(0) }
     var showSignOutConfirm by remember { mutableStateOf(false) }
     // No Security tab: the API has no MFA endpoints. No billing either.
-    val tabs = listOf("Aliases", "Email & Forwarding", "Users")
+    val tabs = listOf("Aliases", "Email & Forwarding", "Users", "Logs")
 
     LaunchedEffect(tabIndex) {
         when (tabIndex) {
@@ -78,6 +90,7 @@ fun SettingsScreen(
                 onVerifyForwarding = viewModel::verifyForwardingTarget,
             )
             2 -> UsersTab(uiState)
+            3 -> LogsTab(uiState, onClear = viewModel::clearLogs)
         }
     }
 
@@ -194,3 +207,65 @@ private fun UsersTab(uiState: SettingsUiState) {
         }
     }
 }
+
+/**
+ * Diagnostic log of what the app has done — sign-in failures, session
+ * refreshes, API errors — so a user can review and share it when reporting
+ * a problem back to us, rather than us only having their word for it.
+ */
+@Composable
+private fun LogsTab(uiState: SettingsUiState, onClear: () -> Unit) {
+    val context = LocalContext.current
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TextButton(
+                enabled = uiState.logs.isNotEmpty(),
+                onClick = {
+                    val shareText = uiState.logs.reversed().joinToString("\n\n") { it.toShareText() }
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, "Numaeel application logs")
+                        putExtra(Intent.EXTRA_TEXT, shareText)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Share logs"))
+                },
+            ) { Text("Share") }
+            TextButton(enabled = uiState.logs.isNotEmpty(), onClick = onClear) { Text("Clear") }
+        }
+        HorizontalDivider()
+        if (uiState.logs.isEmpty()) {
+            Text(
+                "No issues logged yet.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(12.dp),
+            )
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(uiState.logs, key = { it.id }) { entry ->
+                    ListItem(
+                        headlineContent = {
+                            Text(
+                                entry.message,
+                                color = if (entry.level == "ERROR") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                            )
+                        },
+                        supportingContent = { Text("${entry.level} · ${entry.tag} · ${formatLogTimestamp(entry.timestamp)}") },
+                    )
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
+private fun LogEntryEntity.toShareText(): String {
+    val header = "[$level] ${formatLogTimestamp(timestamp)} $tag: $message"
+    return if (detail != null) "$header\n$detail" else header
+}
+
+private fun formatLogTimestamp(timestamp: Long): String =
+    DateFormat.getDateTimeInstance().format(Date(timestamp))

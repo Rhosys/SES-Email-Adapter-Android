@@ -34,19 +34,22 @@ object JwtManager {
      * Proof-of-work anti-abuse hash required on `/authentication` and
      * `/authentication/{id}/tokens` calls, matching the SDK's `calculateAntiAbuseHash`:
      * a fine-tuner is searched until base64url(SHA-256("timestamp;fineTuner;valueString"))
-     * starts with "00". `valueString` is the non-empty prop values (nested maps
-     * flattened by their sorted keys) joined with "|".
+     * starts with "00". `valueString` is the non-empty prop values joined with "|" —
+     * plain objects (maps) are flattened by their sorted keys' values joined with "-";
+     * everything else, including lists, stringifies the way JS would when a value
+     * falls through untouched into `Array.prototype.join('|')`: a list joins its
+     * elements with "," (no brackets, unlike Kotlin's default `List.toString()`).
      */
     fun calculateAntiAbuseHash(props: Map<String, Any?>): String {
         val timestamp = System.currentTimeMillis()
         val valueString = props.values
             .filterNot { it == null || it == "" || it == false }
             .joinToString("|") { value ->
-                if (value is Map<*, *>) {
-                    value.keys.map { it.toString() }.sorted()
+                when (value) {
+                    is Map<*, *> -> value.keys.map { it.toString() }.sorted()
                         .joinToString("-") { key -> value[key].toString() }
-                } else {
-                    value.toString()
+                    is List<*> -> value.joinToString(",")
+                    else -> value.toString()
                 }
             }
 

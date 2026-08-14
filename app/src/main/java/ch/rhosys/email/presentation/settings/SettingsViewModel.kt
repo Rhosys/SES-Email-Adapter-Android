@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import ch.rhosys.email.data.auth.AuthressLoginClient
 import ch.rhosys.email.data.local.PreferencesStore
+import ch.rhosys.email.data.local.entity.LogEntryEntity
+import ch.rhosys.email.data.log.AppLogger
 import ch.rhosys.email.data.repository.SettingsRepository
 import ch.rhosys.email.data.remote.dto.AccountUserDto
 import ch.rhosys.email.data.remote.dto.DnsRecordDto
@@ -21,8 +23,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * MFA devices and plan/billing are absent: the API exposes no endpoints for
- * either. DNS records hang off an individual domain rather than the account.
+ * Plan/billing is absent: the API exposes no endpoints for it. DNS records
+ * hang off an individual domain rather than the account.
  */
 data class SettingsUiState(
     val aliases: List<Alias> = emptyList(),
@@ -32,6 +34,7 @@ data class SettingsUiState(
     val accountUsers: List<AccountUserDto> = emptyList(),
     val themeFlavor: CatppuccinFlavor? = null,
     val biometricLockEnabled: Boolean = false,
+    val logs: List<LogEntryEntity> = emptyList(),
 )
 
 class SettingsViewModel(
@@ -39,6 +42,7 @@ class SettingsViewModel(
     private val accountRepository: AccountRepository,
     private val preferencesStore: PreferencesStore,
     private val authManager: AuthressLoginClient,
+    private val appLogger: AppLogger,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -61,7 +65,12 @@ class SettingsViewModel(
         viewModelScope.launch {
             preferencesStore.biometricLockEnabled.collect { enabled -> _uiState.value = _uiState.value.copy(biometricLockEnabled = enabled) }
         }
+        viewModelScope.launch {
+            appLogger.observeAll().collect { logs -> _uiState.value = _uiState.value.copy(logs = logs) }
+        }
     }
+
+    fun clearLogs() = viewModelScope.launch { appLogger.clear() }
 
     fun loadForwardingAndDomains() {
         val accountId = activeAccountId.value ?: return
