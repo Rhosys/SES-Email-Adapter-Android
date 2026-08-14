@@ -63,12 +63,17 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
 
-            <!-- OAuth redirect capture for the Authress AppAuth flow. -->
+            <!-- Authress login redirect. Must match the redirectUri passed to
+                 AuthressLoginClient, and MainActivity is now the only component
+                 that claims it — AppAuth's RedirectUriReceiverActivity used to
+                 claim the same scheme, which made resolution non-deterministic.
+                 DEFAULT lets the activity receive implicit intents from outside
+                 the app; BROWSABLE lets a Custom Tab trigger it. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="${oauthRedirectScheme}" android:path="/oauth2redirect" />
+                <data android:scheme="ch.rhosys.email" android:host="auth" android:pathPrefix="/callback" />
             </intent-filter>
 
             <meta-data

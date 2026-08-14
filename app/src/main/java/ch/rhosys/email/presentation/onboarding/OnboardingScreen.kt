@@ -30,17 +30,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import ch.rhosys.email.di.LocalAppContainer
+import ch.rhosys.email.presentation.components.ThemePicker
 import ch.rhosys.email.ui.theme.CatppuccinFlavor
 import kotlinx.coroutines.launch
 
-/** Decision #20: 5-step onboarding wizard shown on first launch. */
+/**
+ * Onboarding, shown once on first launch.
+ *
+ * Biometric lock is deliberately not offered here. It is a security preference
+ * someone changes when they want it, not a decision worth stopping a first
+ * launch for, and it lives in Settings alongside the rest of them.
+ */
 @Composable
 fun OnboardingScreen(onFinished: () -> Unit) {
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
-    val pagerState = rememberPagerState(pageCount = { 5 })
+    val pagerState = rememberPagerState(pageCount = { StepCount })
     var themeFlavor by remember { mutableStateOf<CatppuccinFlavor?>(null) }
-    var biometricLockWanted by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
@@ -48,36 +54,27 @@ fun OnboardingScreen(onFinished: () -> Unit) {
                 0 -> WelcomeStep()
                 1 -> NotificationPermissionStep()
                 2 -> ThemeStep(selected = themeFlavor, onSelect = { themeFlavor = it })
-                3 -> BiometricStep(enabled = biometricLockWanted, onToggle = { biometricLockWanted = it })
-                4 -> ReadyStep()
+                3 -> ReadyStep()
             }
         }
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            TextButton(onClick = {
-                scope.launch {
-                    container.preferencesStore.setThemeFlavor(themeFlavor)
-                    container.preferencesStore.setBiometricLockEnabled(biometricLockWanted)
-                    container.preferencesStore.setOnboardingCompleted(true)
-                    onFinished()
-                }
-            }) { Text("Skip") }
+            TextButton(onClick = { scope.launch { finish(container, themeFlavor, onFinished) } }) {
+                Text("Skip")
+            }
 
             Button(onClick = {
                 scope.launch {
-                    if (pagerState.currentPage < 4) {
+                    if (pagerState.currentPage < StepCount - 1) {
                         pagerState.animateScrollToPage(pagerState.currentPage + 1)
                     } else {
-                        container.preferencesStore.setThemeFlavor(themeFlavor)
-                        container.preferencesStore.setBiometricLockEnabled(biometricLockWanted)
-                        container.preferencesStore.setOnboardingCompleted(true)
-                        onFinished()
+                        finish(container, themeFlavor, onFinished)
                     }
                 }
             }) {
-                Text(if (pagerState.currentPage < 4) "Next" else "Get started")
+                Text(if (pagerState.currentPage < StepCount - 1) "Next" else "Get started")
             }
         }
     }
@@ -115,23 +112,21 @@ private fun NotificationPermissionStep() {
 @Composable
 private fun ThemeStep(selected: CatppuccinFlavor?, onSelect: (CatppuccinFlavor?) -> Unit) {
     StepScaffold("Pick a look", "You can change this later in Settings.") {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CatppuccinFlavor.entries.forEach { flavor ->
-                FilterChip(selected = selected == flavor, onClick = { onSelect(flavor) }, label = { Text(flavor.label) })
-            }
-        }
-    }
-}
-
-@Composable
-private fun BiometricStep(enabled: Boolean, onToggle: (Boolean) -> Unit) {
-    StepScaffold("Lock it down", "Require Face or Fingerprint unlock every time you open Numaeel.") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Enable biometric lock")
-            Switch(checked = enabled, onCheckedChange = onToggle, modifier = Modifier.padding(start = 8.dp))
-        }
+        ThemePicker(selected = selected, onSelect = onSelect)
     }
 }
 
 @Composable
 private fun ReadyStep() = StepScaffold("You're all set", "Let's get to inbox zero.")
+
+private const val StepCount = 4
+
+private suspend fun finish(
+    container: ch.rhosys.email.di.AppContainer,
+    themeFlavor: CatppuccinFlavor?,
+    onFinished: () -> Unit,
+) {
+    container.preferencesStore.setThemeFlavor(themeFlavor)
+    container.preferencesStore.setOnboardingCompleted(true)
+    onFinished()
+}

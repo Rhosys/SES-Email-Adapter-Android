@@ -3,7 +3,8 @@ package ch.rhosys.email.di
 import android.content.Context
 import androidx.room.Room
 import ch.rhosys.email.BuildConfig
-import ch.rhosys.email.data.auth.AuthressAuthManager
+import ch.rhosys.email.data.auth.AuthressCookieJar
+import ch.rhosys.email.data.auth.AuthressLoginClient
 import ch.rhosys.email.data.auth.TokenStore
 import ch.rhosys.email.data.local.EmailDatabase
 import ch.rhosys.email.data.remote.api.AuthInterceptor
@@ -37,7 +38,14 @@ import java.util.concurrent.TimeUnit
 class AppContainer(private val context: Context) {
 
     val tokenStore: TokenStore by lazy { TokenStore(context) }
-    val authManager: AuthressAuthManager by lazy { AuthressAuthManager(context, tokenStore) }
+
+    private val cookieJar: AuthressCookieJar by lazy {
+        AuthressCookieJar(context, BuildConfig.AUTHRESS_CUSTOM_DOMAIN)
+    }
+
+    val authManager: AuthressLoginClient by lazy {
+        AuthressLoginClient(context, cookieJar, okHttpClient)
+    }
 
     private val moshi: Moshi by lazy {
         // SignalDto is a polymorphic union discriminated by `type`; Moshi needs the
@@ -49,7 +57,7 @@ class AppContainer(private val context: Context) {
 
     private val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .addInterceptor(AuthInterceptor(tokenStore))
+            .addInterceptor(AuthInterceptor { authManager.waitForToken() })
             .apply {
                 if (BuildConfig.DEBUG) {
                     addInterceptor(HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.BASIC))

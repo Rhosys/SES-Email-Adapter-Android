@@ -1,7 +1,5 @@
 package ch.rhosys.email.presentation.auth
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +9,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,8 +23,12 @@ import ch.rhosys.email.di.LocalAppContainer
 import kotlinx.coroutines.launch
 
 /**
- * Decision #6: Authress-hosted login (social/passkey/password) via AppAuth.
- * No credential fields live in this app — sign-in opens the hosted page.
+ * Authress-hosted login — social, passkey or password. No credential fields live
+ * in this app; Continue opens the hosted page in a Custom Tab.
+ *
+ * There is no activity result to wait on: the flow completes when Authress
+ * redirects back to the app's deep link, which MainActivity forwards to the
+ * login client. This screen just watches for the session to appear.
  */
 @Composable
 fun LoginScreen(onSignedIn: () -> Unit) {
@@ -33,21 +37,14 @@ fun LoginScreen(onSignedIn: () -> Unit) {
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val data = result.data ?: run { isLoading = false; return@rememberLauncherForActivityResult }
-        scope.launch {
-            isLoading = true
-            container.authManager.handleAuthResponse(data)
-                .onSuccess {
-                    runCatching { container.accountRepository.refresh() }
-                    isLoading = false
-                    onSignedIn()
-                }
-                .onFailure {
-                    isLoading = false
-                    error = it.message
-                }
-        }
+    val hasSession by container.authManager.sessionEstablished.collectAsState()
+
+    LaunchedEffect(hasSession) {
+        if (!hasSession) return@LaunchedEffect
+        isLoading = true
+        runCatching { container.accountRepository.refresh() }
+        isLoading = false
+        onSignedIn()
     }
 
     Column(
@@ -64,7 +61,17 @@ fun LoginScreen(onSignedIn: () -> Unit) {
         if (isLoading) {
             CircularProgressIndicator()
         } else {
-            Button(onClick = { isLoading = true; container.authManager.launchSignIn(launcher) }) {
+            Button(onClick = {
+                isLoading = true
+                error = null
+                scope.launch {
+                    container.authManager.authenticate()
+                        .onFailure {
+                            isLoading = false
+                            error = it.message
+                        }
+                }
+            }) {
                 Text("Continue")
             }
         }
