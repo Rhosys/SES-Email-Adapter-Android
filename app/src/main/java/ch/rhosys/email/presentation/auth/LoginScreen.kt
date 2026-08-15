@@ -81,8 +81,16 @@ fun LoginScreen(onSignedIn: () -> Unit) {
         scope.launch {
             mailboxLoading = true
             mailboxError = null
+            val startedAt = System.currentTimeMillis()
+            container.appLogger.info("Login", "Loading mailbox…")
             runCatching { container.accountRepository.refresh() }
-                .onFailure { mailboxError = it.message ?: "Couldn't load your mailbox" }
+                .onSuccess {
+                    container.appLogger.info("Login", "Mailbox loaded in ${System.currentTimeMillis() - startedAt}ms")
+                }
+                .onFailure {
+                    container.appLogger.warn("Login", "Mailbox load failed after ${System.currentTimeMillis() - startedAt}ms", it)
+                    mailboxError = it.message ?: "Couldn't load your mailbox"
+                }
             mailboxLoading = false
             if (mailboxError == null) onSignedIn()
         }

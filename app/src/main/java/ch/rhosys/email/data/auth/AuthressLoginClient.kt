@@ -127,6 +127,8 @@ class AuthressLoginClient(
      * once the browser has been launched; completion arrives via the deep link.
      */
     suspend fun authenticate(options: AuthenticationOptions = AuthenticationOptions()): Result<Unit> = runCatching {
+        val flowStartedAt = System.currentTimeMillis()
+        logger.info("Authress", "authenticate() started (connectionId=${options.connectionId})")
         _authError.value = null
         _authStatus.value = AuthStatus.OpeningBrowser
         storage.setAuthenticationRequest(null)
@@ -134,6 +136,7 @@ class AuthressLoginClient(
         val codes = JwtManager.getAuthCodes()
         // Key order matches @authress/login's authenticate(): connectionId,
         // tenantLookupIdentifier, inviteId, applicationId, audiences.
+        val hashStartedAt = System.currentTimeMillis()
         val antiAbuseHash = JwtManager.calculateAntiAbuseHash(
             linkedMapOf(
                 "connectionId" to options.connectionId,
@@ -143,6 +146,7 @@ class AuthressLoginClient(
                 "audiences" to options.audiences,
             ),
         )
+        logger.info("Authress", "anti-abuse hash computed in ${System.currentTimeMillis() - hashStartedAt}ms")
         val body = JSONObject()
             .put("redirectUrl", redirectUri)
             .put("applicationId", BuildConfig.AUTHRESS_APPLICATION_ID)
@@ -176,6 +180,7 @@ class AuthressLoginClient(
         withContext(Dispatchers.Main) {
             launchAuthenticationUrl(authenticationUrl)
         }
+        logger.info("Authress", "Custom Tab launched, ${System.currentTimeMillis() - flowStartedAt}ms since authenticate() started")
         _authStatus.value = AuthStatus.AwaitingRedirect
     }.onFailure {
         logger.error("Authress", "authenticate() failed", it)
@@ -192,6 +197,8 @@ class AuthressLoginClient(
      * already redeemed.
      */
     suspend fun completeAuthenticationRequest(uri: Uri): Result<Unit> = runCatching {
+        val flowStartedAt = System.currentTimeMillis()
+        logger.info("Authress", "completeAuthenticationRequest() started (redirect received)")
         _authStatus.value = AuthStatus.CompletingSignIn
         val code = uri.getQueryParameter("code").orEmpty()
         val authenticationRequestId = uri.getQueryParameter("authenticationRequestId").orEmpty()
@@ -204,6 +211,7 @@ class AuthressLoginClient(
 
         // Key order matches @authress/login's token exchange: client_id
         // (applicationId), authenticationRequestId, code.
+        val hashStartedAt = System.currentTimeMillis()
         val antiAbuseHash = JwtManager.calculateAntiAbuseHash(
             linkedMapOf(
                 "applicationId" to BuildConfig.AUTHRESS_APPLICATION_ID,
@@ -211,6 +219,7 @@ class AuthressLoginClient(
                 "code" to code,
             ),
         )
+        logger.info("Authress", "anti-abuse hash computed in ${System.currentTimeMillis() - hashStartedAt}ms")
         val body = JSONObject()
             .put("code", code)
             .put("codeVerifier", pending.codeVerifier)
@@ -223,6 +232,7 @@ class AuthressLoginClient(
             val status = e.status
             if (status != null && status < 500) {
                 // Code already used — the session is established, nothing to do.
+                logger.info("Authress", "token exchange returned $status, treating code as already redeemed")
                 storage.setAuthenticationRequest(null)
                 _sessionEstablished.value = getToken() != null
                 _authStatus.value = AuthStatus.Idle
@@ -235,6 +245,7 @@ class AuthressLoginClient(
         storage.setAuthenticationRequest(null)
         _sessionEstablished.value = getToken() != null
         _authStatus.value = AuthStatus.Idle
+        logger.info("Authress", "session established, ${System.currentTimeMillis() - flowStartedAt}ms since redirect received")
     }.onFailure {
         logger.error("Authress", "completeAuthenticationRequest() failed", it)
         _authStatus.value = AuthStatus.Idle
@@ -286,6 +297,7 @@ class AuthressLoginClient(
      */
     suspend fun userIsLoggedIn(): Boolean {
         if (getToken() != null) return true
+        logger.info("Authress", "userIsLoggedIn() found no cached token, refreshing via PATCH /session")
         return runCatching {
             patch("/session", JSONObject())
             val loggedIn = getToken() != null
@@ -431,22 +443,28 @@ class AuthressLoginClient(
             .header("X-Powered-By", "Authress Login SDK; Android; ${BuildConfig.VERSION_NAME}")
             .build()
 
+        val startedAt = System.currentTimeMillis()
+        logger.info("Authress", "-> ${request.method} ${request.url.encodedPath}")
+
         val response = try {
             http.newCall(request).execute()
         } catch (e: IOException) {
-            logger.warn("Authress", "${request.method} ${request.url.encodedPath} network failure", e)
+            val elapsedMs = System.currentTimeMillis() - startedAt
+            logger.warn("Authress", "${request.method} ${request.url.encodedPath} network failure after ${elapsedMs}ms", e)
             throw e
         }
 
         response.use {
+            val elapsedMs = System.currentTimeMillis() - startedAt
             val text = it.body?.string().orEmpty()
             if (!it.isSuccessful) {
-                logger.warn("Authress", "${request.method} ${request.url.encodedPath} failed: ${it.code} $text")
+                logger.warn("Authress", "<- ${request.method} ${request.url.encodedPath} failed: ${it.code} in ${elapsedMs}ms $text")
                 throw AuthressException(
                     "Authress ${request.method} ${request.url.encodedPath} failed: ${it.code} $text",
                     status = it.code,
                 )
             }
+            logger.info("Authress", "<- ${request.method} ${request.url.encodedPath} ${it.code} in ${elapsedMs}ms")
             runCatching { JSONObject(text) }.getOrDefault(JSONObject())
         }
     }
