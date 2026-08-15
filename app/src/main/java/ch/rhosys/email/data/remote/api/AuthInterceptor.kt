@@ -1,28 +1,29 @@
 package ch.rhosys.email.data.remote.api
 
+import kotlinx.coroutines.runBlocking
 import okhttp3.Interceptor
 import okhttp3.Response
 
 /**
- * Attaches the Authress session token to API calls.
+ * Attaches the Authress session token to Email API calls — the one place that
+ * should ever call [ch.rhosys.email.data.auth.AuthressLoginClient.waitForToken]:
+ * this is the HTTP call wrapper, grabbing the token right before the request
+ * that needs it. It returns immediately when a token is already cached, and
+ * otherwise waits briefly for one being established rather than firing a
+ * request that's certain to be rejected — e.g. a token that expired between
+ * route changes, while [AppNavHost][ch.rhosys.email.presentation.navigation.AppNavHost]'s
+ * `userIsLoggedIn()` refresh is still in flight.
  *
- * Deliberately synchronous and non-blocking: [tokenProvider] reads whatever
- * token is cached right now (see [ch.rhosys.email.data.auth.AuthressLoginClient.getToken])
- * and nothing more. This interceptor runs on OkHttp's dispatcher for every
- * request — it is not the right place to await a session that only a
- * foreground, user-driven flow (the login screen, waiting on the browser) can
- * establish. An earlier version called the suspend `waitForToken()` here via
- * `runBlocking`, which meant an ordinary API call could sit blocked on a pool
- * thread for its full timeout waiting on unrelated browser-driven login —
- * exactly the kind of stall this class exists to attach a token quickly, not
- * cause. If no token is cached, the request goes out without one and the
- * caller sees the resulting 401 like any other API error; ensuring a session
- * is ready is [ch.rhosys.email.presentation.navigation.AppNavHost]'s job via
- * `userIsLoggedIn()`, not this interceptor's.
+ * `runBlocking` is safe here — OkHttp interceptors run on OkHttp's own
+ * dispatcher, never the main thread. It only stays safe because this
+ * interceptor is never installed on Authress's own client: Authress's calls
+ * (see `AppContainer.authHttpClient`) don't carry it, since a call like
+ * `POST /authentication` is what establishes the session in the first place —
+ * waiting on its own result here would deadlock until the timeout, every time.
  */
-class AuthInterceptor(private val tokenProvider: () -> String?) : Interceptor {
+class AuthInterceptor(private val tokenProvider: suspend () -> String?) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
-        val token = tokenProvider()
+        val token = runBlocking { tokenProvider() }
         val request = chain.request().newBuilder().apply {
             if (token != null) addHeader("Authorization", "Bearer $token")
         }.build()

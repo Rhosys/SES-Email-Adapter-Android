@@ -26,12 +26,15 @@ POST /api/authentication/{id}/tokens                  -> session cookies
 
 The session lives in the `authorization` and `user` cookies rather than an
 access/refresh pair. `userIsLoggedIn()` refreshes it via `PATCH /session` and is
-called on every route change, per the SDK's own recommendation. `AuthInterceptor`
-attaches whatever token is cached synchronously and never blocks a request on it;
-`waitForToken()` is only for a foreground caller deliberately gating on sign-in
-(the login screen) — an interceptor that `runBlocking`'d it used to stall every
-Email API call for up to 5s whenever no session existed yet, which was also why
-the very first Authress call of a fresh login was stalling.
+called on every route change, per the SDK's own recommendation; `AuthInterceptor`
+calls `waitForToken()` to grab the bearer token right before an Email API
+request goes out — the only place that should ever call it. That's safe
+(`runBlocking` inside an OkHttp interceptor never touches the main thread) as
+long as Authress's own client never carries this interceptor: `POST
+/authentication` is what establishes the session, so waiting on its own result
+there deadlocked until the timeout — which was also why the very first Authress
+call of a fresh login used to stall for 5s. Authress now gets its own client
+(`authHttpClient`) without `AuthInterceptor` at all.
 
 The duplicate redirect claim is gone with AppAuth: MainActivity is now the only
 component matching the scheme, and it forwards the redirect through

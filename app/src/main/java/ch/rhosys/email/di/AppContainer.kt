@@ -83,13 +83,13 @@ class AppContainer(private val context: Context) {
     }
 
     /**
-     * For the Email API only. Adds bearer auth (from whatever token is cached right
-     * now — see [AuthInterceptor], deliberately non-blocking) and the same
-     * timing-log visibility Authress calls get, plus debug body logging.
+     * For the Email API only. Adds bearer auth via [AuthInterceptor] — the HTTP
+     * call wrapper that grabs the token right before hitting the backend — plus
+     * the same timing-log visibility Authress calls get, and debug body logging.
      */
     private val okHttpClient: OkHttpClient by lazy {
         authHttpClient.newBuilder()
-            .addInterceptor(AuthInterceptor { authManager.getToken() })
+            .addInterceptor(AuthInterceptor { authManager.waitForToken() })
             .addInterceptor(ApiLoggingInterceptor(appLogger))
             .apply {
                 if (BuildConfig.DEBUG) {
