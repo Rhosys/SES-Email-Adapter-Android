@@ -5,15 +5,21 @@ import okhttp3.Interceptor
 import okhttp3.Response
 
 /**
- * Attaches the Authress session token to API calls.
+ * Attaches the Authress session token to Email API calls — the one place that
+ * should ever call [ch.rhosys.email.data.auth.AuthressLoginClient.waitForToken]:
+ * this is the HTTP call wrapper, grabbing the token right before the request
+ * that needs it. It returns immediately when a token is already cached, and
+ * otherwise waits briefly for one being established rather than firing a
+ * request that's certain to be rejected — e.g. a token that expired between
+ * route changes, while [AppNavHost][ch.rhosys.email.presentation.navigation.AppNavHost]'s
+ * `userIsLoggedIn()` refresh is still in flight.
  *
- * The token comes from the login client's waitForToken, which is what the SDK
- * documents for an Authorization header: it returns immediately when a valid
- * session exists, and otherwise waits briefly for one being established rather
- * than firing a request that is certain to be rejected.
- *
- * runBlocking is safe here — OkHttp interceptors already run on a background
- * dispatcher, never the main thread.
+ * `runBlocking` is safe here — OkHttp interceptors run on OkHttp's own
+ * dispatcher, never the main thread. It only stays safe because this
+ * interceptor is never installed on Authress's own client: Authress's calls
+ * (see `AppContainer.authHttpClient`) don't carry it, since a call like
+ * `POST /authentication` is what establishes the session in the first place —
+ * waiting on its own result here would deadlock until the timeout, every time.
  */
 class AuthInterceptor(private val tokenProvider: suspend () -> String?) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {

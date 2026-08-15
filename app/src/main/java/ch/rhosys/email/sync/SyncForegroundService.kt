@@ -34,9 +34,11 @@ class SyncForegroundService : Service() {
         super.onCreate()
         startForeground(NOTIFICATION_ID, buildNotification())
         val container = (application as? ch.rhosys.email.EmailApp)?.appContainer ?: return
+        container.appLogger.info("Sync", "SyncForegroundService started, interval ${SYNC_INTERVAL_MS}ms")
         syncJob = scope.launch {
             while (true) {
                 runCatching { container.threadRepository.syncPending() }
+                    .onFailure { container.appLogger.warn("Sync", "syncPending tick crashed", it) }
                 delay(SYNC_INTERVAL_MS)
             }
         }
@@ -59,6 +61,8 @@ class SyncForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        val container = (application as? ch.rhosys.email.EmailApp)?.appContainer
+        container?.appLogger?.info("Sync", "SyncForegroundService stopped")
         scope.cancel()
         super.onDestroy()
     }

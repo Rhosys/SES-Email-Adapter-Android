@@ -64,7 +64,14 @@ class MainActivity : FragmentActivity() {
     private fun handleAuthRedirect(intent: Intent?) {
         val appContainer = (application as EmailApp).appContainer
         val uri = intent?.data ?: return
-        if (!appContainer.authManager.isRedirect(uri)) return
+        val isRedirect = appContainer.authManager.isRedirect(uri)
+        // Not the auth code itself — just scheme/host/path — so this is safe to log
+        // even when it turns out not to be an Authress redirect at all.
+        appContainer.appLogger.info(
+            "Authress",
+            "handleAuthRedirect: received ${uri.scheme}://${uri.host}${uri.path}, isRedirect=$isRedirect",
+        )
+        if (!isRedirect) return
         lifecycleScope.launch { appContainer.authManager.completeAuthenticationRequest(uri) }
     }
 

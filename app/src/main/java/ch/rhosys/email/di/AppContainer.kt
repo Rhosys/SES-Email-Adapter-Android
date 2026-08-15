@@ -8,6 +8,7 @@ import ch.rhosys.email.data.auth.AuthressLoginClient
 import ch.rhosys.email.data.auth.TokenStore
 import ch.rhosys.email.data.local.EmailDatabase
 import ch.rhosys.email.data.log.AppLogger
+import ch.rhosys.email.data.remote.api.ApiLoggingInterceptor
 import ch.rhosys.email.data.remote.api.AuthInterceptor
 import ch.rhosys.email.data.remote.api.EmailApiService
 import ch.rhosys.email.data.remote.api.UserAgentInterceptor
@@ -54,7 +55,7 @@ class AppContainer(private val context: Context) {
     }
 
     val authManager: AuthressLoginClient by lazy {
-        AuthressLoginClient(context, cookieJar, okHttpClient, appLogger)
+        AuthressLoginClient(context, cookieJar, authHttpClient, appLogger)
     }
 
     private val moshi: Moshi by lazy {
@@ -65,17 +66,36 @@ class AppContainer(private val context: Context) {
             .build()
     }
 
-    private val okHttpClient: OkHttpClient by lazy {
+    /**
+     * Authress's own calls must never carry [AuthInterceptor]: Authress sessions
+     * live in cookies, not a bearer token, so the interceptor has nothing to add
+     * there — it exists for the Email API client below.
+     */
+    private val authHttpClient: OkHttpClient by lazy {
+        // No debug HttpLoggingInterceptor here: AuthressLoginClient.execute() already
+        // logs method/path/status/duration through AppLogger for every Authress call,
+        // in both debug and release, making it redundant.
         OkHttpClient.Builder()
             .addInterceptor(UserAgentInterceptor())
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
+     * For the Email API only. Adds bearer auth via [AuthInterceptor] — the HTTP
+     * call wrapper that grabs the token right before hitting the backend — plus
+     * the same timing-log visibility Authress calls get, and debug body logging.
+     */
+    private val okHttpClient: OkHttpClient by lazy {
+        authHttpClient.newBuilder()
             .addInterceptor(AuthInterceptor { authManager.waitForToken() })
+            .addInterceptor(ApiLoggingInterceptor(appLogger))
             .apply {
                 if (BuildConfig.DEBUG) {
                     addInterceptor(HttpLoggingInterceptor().setLevel(HttpLoggingInterceptor.Level.BASIC))
                 }
             }
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
             .build()
     }
 
@@ -101,7 +121,7 @@ class AppContainer(private val context: Context) {
     }
 
     val threadRepository: ThreadRepository by lazy {
-        ThreadRepositoryImpl(apiService, database)
+        ThreadRepositoryImpl(apiService, database, appLogger)
     }
 
     val composeRepository: ComposeRepository by lazy {

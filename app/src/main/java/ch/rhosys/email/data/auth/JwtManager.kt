@@ -1,6 +1,8 @@
 package ch.rhosys.email.data.auth
 
 import android.util.Base64
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -39,8 +41,16 @@ object JwtManager {
      * everything else, including lists, stringifies the way JS would when a value
      * falls through untouched into `Array.prototype.join('|')`: a list joins its
      * elements with "," (no brackets, unlike Kotlin's default `List.toString()`).
+     *
+     * This is a busy-loop search, not I/O — it's dispatched to [Dispatchers.Default]
+     * internally rather than left to whatever dispatcher the caller happens to be
+     * on, so it never runs on Main just because a caller launched from a Compose
+     * `rememberCoroutineScope`.
      */
-    fun calculateAntiAbuseHash(props: Map<String, Any?>): String {
+    suspend fun calculateAntiAbuseHash(props: Map<String, Any?>): String =
+        withContext(Dispatchers.Default) { searchAntiAbuseHash(props) }
+
+    private fun searchAntiAbuseHash(props: Map<String, Any?>): String {
         val timestamp = System.currentTimeMillis()
         val valueString = props.values
             .filterNot { it == null || it == "" || it == false }

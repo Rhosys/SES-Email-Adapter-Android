@@ -17,6 +17,7 @@ import androidx.navigation.navArgument
 import ch.rhosys.email.di.LocalAppContainer
 import ch.rhosys.email.presentation.auth.LoginScreen
 import ch.rhosys.email.presentation.changelog.ChangelogDialog
+import ch.rhosys.email.presentation.components.DebugLogOverlay
 import ch.rhosys.email.presentation.compose.ComposeScreen
 import ch.rhosys.email.presentation.drafts.DraftsScreen
 import ch.rhosys.email.presentation.inbox.InboxScreen
@@ -49,10 +50,14 @@ fun RootNavGraph() {
 
     when (gate) {
         RootGate.LOADING -> CircularProgressIndicator()
-        RootGate.ONBOARDING -> OnboardingScreen(onFinished = {
-            gate = if (container.authManager.isSignedIn) RootGate.APP else RootGate.LOGIN
-        })
-        RootGate.LOGIN -> LoginScreen(onSignedIn = { gate = RootGate.APP })
+        RootGate.ONBOARDING -> DebugLogOverlay(container.appLogger) {
+            OnboardingScreen(onFinished = {
+                gate = if (container.authManager.isSignedIn) RootGate.APP else RootGate.LOGIN
+            })
+        }
+        RootGate.LOGIN -> DebugLogOverlay(container.appLogger) {
+            LoginScreen(onSignedIn = { gate = RootGate.APP })
+        }
         RootGate.APP -> {
             ChangelogDialog(container.preferencesStore)
             FeatureTourDialog(container.preferencesStore)
