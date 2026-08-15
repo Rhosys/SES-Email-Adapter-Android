@@ -8,6 +8,7 @@ import androidx.paging.map
 import ch.rhosys.email.data.local.EmailDatabase
 import ch.rhosys.email.data.local.entity.toDomain
 import ch.rhosys.email.data.local.entity.toEntity
+import ch.rhosys.email.data.log.AppLogger
 import ch.rhosys.email.data.remote.api.EmailApiService
 import ch.rhosys.email.data.remote.dto.PatchThreadRequest
 import ch.rhosys.email.data.remote.dto.QuarantineResponseRequest
@@ -33,6 +34,7 @@ import java.time.Instant
 class ThreadRepositoryImpl(
     private val api: EmailApiService,
     private val db: EmailDatabase,
+    private val logger: AppLogger,
 ) : ThreadRepository {
 
     private val threadDao = db.threadDao()
@@ -118,7 +120,15 @@ class ThreadRepositoryImpl(
     }
 
     override suspend fun syncPending() {
-        threadDao.pendingSync().forEach { entity ->
+        val pendingThreads = threadDao.pendingSync()
+        val pendingSignals = signalDao.pendingSync()
+        if (pendingThreads.isEmpty() && pendingSignals.isEmpty()) return
+
+        val startedAt = System.currentTimeMillis()
+        logger.info("Sync", "syncPending: ${pendingThreads.size} thread(s), ${pendingSignals.size} signal(s) queued")
+
+        var threadFailures = 0
+        pendingThreads.forEach { entity ->
             runCatching {
                 api.patchThread(
                     entity.accountId,
@@ -130,18 +140,33 @@ class ThreadRepositoryImpl(
                     ),
                 )
                 threadDao.update(entity.copy(isPendingSync = false))
+            }.onFailure {
+                threadFailures++
+                logger.warn("Sync", "syncPending: thread ${entity.threadId} failed", it)
             }
         }
-        signalDao.pendingSync().forEach { entity ->
+
+        var signalFailures = 0
+        pendingSignals.forEach { entity ->
+            val threadId = entity.threadId ?: return@forEach
             runCatching {
                 api.patchSignal(
                     entity.accountId,
-                    entity.threadId ?: return@runCatching,
+                    threadId,
                     entity.signalId,
                     ch.rhosys.email.data.remote.dto.PatchSignalRequest(entity.status),
                 )
                 signalDao.updateStatus(entity.signalId, entity.status, pending = false)
+            }.onFailure {
+                signalFailures++
+                logger.warn("Sync", "syncPending: signal ${entity.signalId} failed", it)
             }
         }
+
+        logger.info(
+            "Sync",
+            "syncPending finished in ${System.currentTimeMillis() - startedAt}ms " +
+                "($threadFailures/${pendingThreads.size} thread failures, $signalFailures/${pendingSignals.size} signal failures)",
+        )
     }
 }

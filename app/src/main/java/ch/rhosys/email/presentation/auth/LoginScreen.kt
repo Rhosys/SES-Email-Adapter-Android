@@ -39,9 +39,11 @@ import kotlinx.coroutines.launch
  * *where* it's stuck rather than just that "something" is loading.
  */
 private enum class LoginStep(val label: String) {
+    RequestingAuthenticationUrl("Requesting the sign-in page"),
     OpeningBrowser("Opening the sign-in page"),
     AwaitingRedirect("Waiting for you to finish in the browser"),
-    CompletingSignIn("Completing sign-in"),
+    VerifyingRedirect("Verifying the sign-in response"),
+    ExchangingToken("Completing sign-in"),
     LoadingMailbox("Loading your mailbox"),
 }
 
@@ -71,9 +73,11 @@ fun LoginScreen(onSignedIn: () -> Unit) {
 
     val currentStep = when {
         mailboxLoading -> LoginStep.LoadingMailbox
+        authStatus == AuthressLoginClient.AuthStatus.RequestingAuthenticationUrl -> LoginStep.RequestingAuthenticationUrl
         authStatus == AuthressLoginClient.AuthStatus.OpeningBrowser -> LoginStep.OpeningBrowser
         authStatus == AuthressLoginClient.AuthStatus.AwaitingRedirect -> LoginStep.AwaitingRedirect
-        authStatus == AuthressLoginClient.AuthStatus.CompletingSignIn -> LoginStep.CompletingSignIn
+        authStatus == AuthressLoginClient.AuthStatus.VerifyingRedirect -> LoginStep.VerifyingRedirect
+        authStatus == AuthressLoginClient.AuthStatus.ExchangingToken -> LoginStep.ExchangingToken
         else -> null
     }
 
@@ -122,6 +126,7 @@ fun LoginScreen(onSignedIn: () -> Unit) {
 
         if (currentStep == null) {
             Button(onClick = {
+                container.appLogger.info("Login", "\"Continue\" tapped")
                 mailboxError = null
                 scope.launch { container.authManager.authenticate() }
             }) {
@@ -140,6 +145,7 @@ fun LoginScreen(onSignedIn: () -> Unit) {
                     modifier = Modifier.padding(top = 16.dp),
                 )
                 TextButton(onClick = {
+                    container.appLogger.info("Login", "\"Try again\" tapped while stuck on $currentStep")
                     if (currentStep == LoginStep.LoadingMailbox) loadMailbox() else {
                         mailboxError = null
                         scope.launch { container.authManager.authenticate() }

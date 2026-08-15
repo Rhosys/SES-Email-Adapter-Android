@@ -47,7 +47,10 @@ object JwtManager {
      * on, so it never runs on Main just because a caller launched from a Compose
      * `rememberCoroutineScope`.
      */
-    suspend fun calculateAntiAbuseHash(props: Map<String, Any?>): String = withContext(Dispatchers.Default) {
+    suspend fun calculateAntiAbuseHash(props: Map<String, Any?>): String =
+        withContext(Dispatchers.Default) { searchAntiAbuseHash(props) }
+
+    private fun searchAntiAbuseHash(props: Map<String, Any?>): String {
         val timestamp = System.currentTimeMillis()
         val valueString = props.values
             .filterNot { it == null || it == "" || it == false }
@@ -66,7 +69,7 @@ object JwtManager {
             val input = "$timestamp;$fineTuner;$valueString"
             val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))
             val hash = Base64.encodeToString(digest, B64_URL)
-            if (hash.startsWith("00")) return@withContext "v2;$timestamp;$fineTuner;$hash"
+            if (hash.startsWith("00")) return "v2;$timestamp;$fineTuner;$hash"
         }
     }
 
