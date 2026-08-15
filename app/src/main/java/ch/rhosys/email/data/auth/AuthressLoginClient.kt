@@ -350,11 +350,16 @@ class AuthressLoginClient(
     }
 
     /**
-     * Waits until a bearer token is available, then returns it. Blocks until
+     * Waits until a bearer token is available, then returns it. Suspends until
      * [authenticate] plus [completeAuthenticationRequest], or [userIsLoggedIn],
      * establishes a session. This is the SDK's documented way to obtain the value
-     * for an Authorization header, and is what [ch.rhosys.email.data.remote.api.AuthInterceptor]
-     * uses — reading the cookie directly would race a session that is mid-refresh.
+     * for an Authorization header — but only for a foreground, UI-driven caller
+     * that is deliberately gating on sign-in (e.g. the login screen itself). It is
+     * NOT for [ch.rhosys.email.data.remote.api.AuthInterceptor], which attaches
+     * whatever token is cached right now and never blocks: that interceptor runs
+     * on OkHttp's own dispatcher for every request, and blocking one of its
+     * threads on a browser-driven login the request has nothing to do with is
+     * exactly the kind of stall this class exists to avoid.
      *
      * Returns null if no token arrives within [timeoutInMillis]; 0 means do not
      * wait at all, matching the SDK.

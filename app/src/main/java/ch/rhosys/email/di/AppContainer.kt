@@ -67,15 +67,9 @@ class AppContainer(private val context: Context) {
     }
 
     /**
-     * Authress's own calls must never go through [AuthInterceptor]: that interceptor
-     * calls [AuthressLoginClient.waitForToken], which — before a session exists —
-     * blocks for its full 5s timeout waiting for a session that can only be
-     * established by the very call being made. Wiring `authManager` off the same
-     * client as `okHttpClient` (which carries [AuthInterceptor]) previously did
-     * exactly that: every unauthenticated Authress call, including the initial
-     * `POST /authentication` that starts login, stalled 5s before the request even
-     * went out. This client carries the identifying headers but not the bearer-auth
-     * interceptor, since Authress sessions live in cookies, not a bearer token.
+     * Authress's own calls must never carry [AuthInterceptor]: Authress sessions
+     * live in cookies, not a bearer token, so the interceptor has nothing to add
+     * there — it exists for the Email API client below.
      */
     private val authHttpClient: OkHttpClient by lazy {
         // No debug HttpLoggingInterceptor here: AuthressLoginClient.execute() already
@@ -88,10 +82,14 @@ class AppContainer(private val context: Context) {
             .build()
     }
 
-    /** For the Email API only. Adds bearer auth and the same timing-log visibility Authress calls get, plus debug body logging. */
+    /**
+     * For the Email API only. Adds bearer auth (from whatever token is cached right
+     * now — see [AuthInterceptor], deliberately non-blocking) and the same
+     * timing-log visibility Authress calls get, plus debug body logging.
+     */
     private val okHttpClient: OkHttpClient by lazy {
         authHttpClient.newBuilder()
-            .addInterceptor(AuthInterceptor { authManager.waitForToken() })
+            .addInterceptor(AuthInterceptor { authManager.getToken() })
             .addInterceptor(ApiLoggingInterceptor(appLogger))
             .apply {
                 if (BuildConfig.DEBUG) {
