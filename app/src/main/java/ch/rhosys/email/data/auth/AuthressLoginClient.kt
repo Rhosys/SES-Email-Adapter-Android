@@ -76,6 +76,23 @@ class AuthressLoginClient(
      */
     val sessionEstablished: StateFlow<Boolean> = _sessionEstablished.asStateFlow()
 
+    /**
+     * Where the sign-in flow currently is, so the UI can show *which* step is
+     * slow instead of a single spinner covering everything from "tapped
+     * Continue" to "mailbox loaded". [AwaitingRedirect] can legitimately sit
+     * for a while (the user is doing something in the browser); the others
+     * are calls to Authress and are worth a "this is taking a while" hint if
+     * they don't resolve quickly.
+     */
+    enum class AuthStatus { Idle, OpeningBrowser, AwaitingRedirect, CompletingSignIn }
+
+    private val _authStatus = MutableStateFlow(AuthStatus.Idle)
+    val authStatus: StateFlow<AuthStatus> = _authStatus.asStateFlow()
+
+    /** The reason the last [authenticate] or [completeAuthenticationRequest] failed, if any. */
+    private val _authError = MutableStateFlow<String?>(null)
+    val authError: StateFlow<String?> = _authError.asStateFlow()
+
     init {
         // The SDK restores cookies from encrypted storage in its constructor,
         // before anything reads a token.
@@ -110,6 +127,8 @@ class AuthressLoginClient(
      * once the browser has been launched; completion arrives via the deep link.
      */
     suspend fun authenticate(options: AuthenticationOptions = AuthenticationOptions()): Result<Unit> = runCatching {
+        _authError.value = null
+        _authStatus.value = AuthStatus.OpeningBrowser
         storage.setAuthenticationRequest(null)
 
         val codes = JwtManager.getAuthCodes()
@@ -157,7 +176,12 @@ class AuthressLoginClient(
         withContext(Dispatchers.Main) {
             launchAuthenticationUrl(authenticationUrl)
         }
-    }.onFailure { logger.error("Authress", "authenticate() failed", it) }
+        _authStatus.value = AuthStatus.AwaitingRedirect
+    }.onFailure {
+        logger.error("Authress", "authenticate() failed", it)
+        _authStatus.value = AuthStatus.Idle
+        _authError.value = it.message
+    }
 
     // ── completeAuthenticationRequest ───────────────────────────────────────
 
@@ -168,6 +192,7 @@ class AuthressLoginClient(
      * already redeemed.
      */
     suspend fun completeAuthenticationRequest(uri: Uri): Result<Unit> = runCatching {
+        _authStatus.value = AuthStatus.CompletingSignIn
         val code = uri.getQueryParameter("code").orEmpty()
         val authenticationRequestId = uri.getQueryParameter("authenticationRequestId").orEmpty()
 
@@ -200,6 +225,7 @@ class AuthressLoginClient(
                 // Code already used — the session is established, nothing to do.
                 storage.setAuthenticationRequest(null)
                 _sessionEstablished.value = getToken() != null
+                _authStatus.value = AuthStatus.Idle
                 return@runCatching
             }
             throw e
@@ -208,7 +234,12 @@ class AuthressLoginClient(
         cookieJar.backupCookies()
         storage.setAuthenticationRequest(null)
         _sessionEstablished.value = getToken() != null
-    }.onFailure { logger.error("Authress", "completeAuthenticationRequest() failed", it) }
+        _authStatus.value = AuthStatus.Idle
+    }.onFailure {
+        logger.error("Authress", "completeAuthenticationRequest() failed", it)
+        _authStatus.value = AuthStatus.Idle
+        _authError.value = it.message
+    }
 
     /** True when the redirect belongs to this client. */
     fun isRedirect(uri: Uri?): Boolean =
