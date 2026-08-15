@@ -1,6 +1,7 @@
 package ch.rhosys.email.data.auth
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 import ch.rhosys.email.BuildConfig
@@ -154,7 +155,7 @@ class AuthressLoginClient(
         )
 
         withContext(Dispatchers.Main) {
-            CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(authenticationUrl))
+            launchAuthenticationUrl(authenticationUrl)
         }
     }.onFailure { logger.error("Authress", "authenticate() failed", it) }
 
@@ -212,6 +213,19 @@ class AuthressLoginClient(
     /** True when the redirect belongs to this client. */
     fun isRedirect(uri: Uri?): Boolean =
         uri != null && uri.toString().startsWith(redirectUri)
+
+    /**
+     * [context] here is always the Application context (this client is built
+     * once in [ch.rhosys.email.di.AppContainer], never per-Activity), so the
+     * Custom Tab intent needs FLAG_ACTIVITY_NEW_TASK explicitly — launchUrl
+     * doesn't add it, and starting an activity from a non-Activity context
+     * without it throws.
+     */
+    private fun launchAuthenticationUrl(url: String) {
+        val customTabsIntent = CustomTabsIntent.Builder().build()
+        customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        customTabsIntent.launchUrl(context, Uri.parse(url))
+    }
 
     // ── session ─────────────────────────────────────────────────────────────
 
@@ -329,7 +343,7 @@ class AuthressLoginClient(
         )
 
         withContext(Dispatchers.Main) {
-            CustomTabsIntent.Builder().build().launchUrl(context, Uri.parse(authenticationUrl))
+            launchAuthenticationUrl(authenticationUrl)
         }
         AuthenticationResponse(authenticationUrl, authenticationRequestId)
     }.onFailure { logger.error("Authress", "linkIdentity() failed", it) }
