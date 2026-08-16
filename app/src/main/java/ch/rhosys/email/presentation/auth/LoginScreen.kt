@@ -71,6 +71,16 @@ fun LoginScreen(onSignedIn: () -> Unit) {
     var mailboxError by remember { mutableStateOf<String?>(null) }
     var slowHint by remember { mutableStateOf(false) }
 
+    // Guards the Continue button against a double-tap firing authenticate() twice
+    // before the first tap's status change has recomposed the button away — Compose
+    // doesn't debounce onClick, and two authenticate() calls in flight is exactly
+    // the "authentication request mismatch" trigger. Reset once authStatus actually
+    // reflects a real attempt (or fails back to Idle), not on a timer.
+    var signInStarting by remember { mutableStateOf(false) }
+    LaunchedEffect(authStatus) {
+        if (authStatus != AuthressLoginClient.AuthStatus.Idle) signInStarting = false
+    }
+
     val currentStep = when {
         mailboxLoading -> LoginStep.LoadingMailbox
         authStatus == AuthressLoginClient.AuthStatus.RequestingAuthenticationUrl -> LoginStep.RequestingAuthenticationUrl
@@ -125,11 +135,15 @@ fun LoginScreen(onSignedIn: () -> Unit) {
         )
 
         if (currentStep == null) {
-            Button(onClick = {
-                container.appLogger.info("Login", "\"Continue\" tapped")
-                mailboxError = null
-                scope.launch { container.authManager.authenticate() }
-            }) {
+            Button(
+                enabled = !signInStarting,
+                onClick = {
+                    signInStarting = true
+                    container.appLogger.info("Login", "\"Continue\" tapped")
+                    mailboxError = null
+                    scope.launch { container.authManager.authenticate() }
+                },
+            ) {
                 Text("Continue")
             }
         } else {

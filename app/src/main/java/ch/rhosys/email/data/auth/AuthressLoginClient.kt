@@ -105,6 +105,16 @@ class AuthressLoginClient(
     private val _authError = MutableStateFlow<String?>(null)
     val authError: StateFlow<String?> = _authError.asStateFlow()
 
+    /**
+     * Set by [authenticate] when it starts a new attempt while a previous one was
+     * still in flight (e.g. "Try again" tapped while the first Custom Tab is still
+     * alive). If that first tab still redirects back afterwards, its
+     * authenticationRequestId won't match the new pending one — expected, not a
+     * bug — so [completeAuthenticationRequest] drops it quietly instead of
+     * surfacing "Authentication request mismatch" to the user.
+     */
+    private var abandonedAuthenticationRequestId: String? = null
+
     init {
         // The SDK restores cookies from encrypted storage in its constructor,
         // before anything reads a token.
@@ -146,15 +156,16 @@ class AuthressLoginClient(
         if (previousStatus != AuthStatus.Idle) {
             // Most often: the user waited past the slow-hint and tapped "Try again"
             // while the first Custom Tab is still alive. That tab can still redirect
-            // back with the OLD authenticationRequestId after we've moved on to a
-            // new one — completeAuthenticationRequest() will log that as a mismatch
-            // against the new pending request. Logged here so the two log lines can
-            // be correlated instead of the mismatch looking unexplained.
+            // back with the OLD authenticationRequestId after we've moved on to a new
+            // one; recording it here lets completeAuthenticationRequest() recognize
+            // and quietly drop that stale redirect instead of surfacing it as an
+            // "Authentication request mismatch" error.
             logger.warn(
                 "Authress",
                 "authenticate() re-entered while previous attempt was $previousStatus" +
                     (abandonedPending?.let { " — abandoning authenticationRequestId=${it.authenticationRequestId}" } ?: ""),
             )
+            abandonedAuthenticationRequestId = abandonedPending?.authenticationRequestId
         }
 
         logger.info("Authress", "authenticate() started (connectionId=${options.connectionId})")
@@ -236,17 +247,27 @@ class AuthressLoginClient(
             "completeAuthenticationRequest() started (redirect received, authenticationRequestId=$authenticationRequestId, " +
                 "code=${if (code.isEmpty()) "missing" else "present"})",
         )
+
+        if (authenticationRequestId.isNotEmpty() && authenticationRequestId == abandonedAuthenticationRequestId) {
+            // A stale Custom Tab from an attempt we already moved on from (see
+            // authenticate()) finally redirected back. Expected, not an error — drop
+            // it without touching _authStatus, which belongs to whatever attempt is
+            // actually current.
+            logger.info("Authress", "ignoring redirect for abandoned authenticationRequestId=$authenticationRequestId")
+            return@runCatching
+        }
+
         _authStatus.value = AuthStatus.VerifyingRedirect
 
         val pending = storage.getAuthenticationRequest()
             ?: throw AuthressException("No authentication request in progress (redirect carried authenticationRequestId=$authenticationRequestId)")
         if (pending.authenticationRequestId != authenticationRequestId) {
-            // The likely cause is logged by authenticate() when it abandons a
-            // still-live attempt; these two lines are meant to be read together.
+            // Not a recognized abandonment (checked above) and doesn't match the
+            // current pending request either — a genuinely unexpected mismatch.
             logger.warn(
                 "Authress",
                 "authentication request mismatch: pending=${pending.authenticationRequestId}, redirect=$authenticationRequestId " +
-                    "— this redirect is probably from an earlier Custom Tab that was still open when a new attempt started",
+                    "— not a known-abandoned request either; redirect may be stale from before the app was killed/reinstalled",
             )
             throw AuthressException("Authentication request mismatch")
         }
