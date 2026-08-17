@@ -261,7 +261,24 @@ class AuthressLoginClient(
 
         val pending = storage.getAuthenticationRequest()
             ?: throw AuthressException("No authentication request in progress (redirect carried authenticationRequestId=$authenticationRequestId)")
-        if (pending.authenticationRequestId != authenticationRequestId) {
+
+        // Seen in production: Authress's hosted redirect sometimes comes back with
+        // `code` but no `authenticationRequestId` at all (not merely a different
+        // one). isRedirect() already confirmed this deep link matches our exclusive
+        // redirectUri, so as long as there's no other attempt we've abandoned and
+        // could be confusing this with, a single pending request is unambiguous —
+        // trust it rather than fail a login that otherwise has a valid code.
+        val effectiveAuthenticationRequestId = if (authenticationRequestId.isEmpty() && abandonedAuthenticationRequestId == null) {
+            logger.warn(
+                "Authress",
+                "redirect carried no authenticationRequestId; assuming it belongs to the sole pending request=${pending.authenticationRequestId}",
+            )
+            pending.authenticationRequestId
+        } else {
+            authenticationRequestId
+        }
+
+        if (pending.authenticationRequestId != effectiveAuthenticationRequestId) {
             // Not a recognized abandonment (checked above) and doesn't match the
             // current pending request either — a genuinely unexpected mismatch.
             logger.warn(
@@ -279,7 +296,7 @@ class AuthressLoginClient(
         val antiAbuseHash = JwtManager.calculateAntiAbuseHash(
             linkedMapOf(
                 "applicationId" to BuildConfig.AUTHRESS_APPLICATION_ID,
-                "authenticationRequestId" to authenticationRequestId,
+                "authenticationRequestId" to effectiveAuthenticationRequestId,
                 "code" to code,
             ),
         )
@@ -291,7 +308,7 @@ class AuthressLoginClient(
             .put("antiAbuseHash", antiAbuseHash)
 
         try {
-            post("/authentication/$authenticationRequestId/tokens", body)
+            post("/authentication/$effectiveAuthenticationRequestId/tokens", body)
         } catch (e: AuthressException) {
             val status = e.status
             if (status != null && status < 500) {
