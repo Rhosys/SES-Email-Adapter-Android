@@ -241,7 +241,7 @@ class AuthressLoginClient(
     suspend fun completeAuthenticationRequest(uri: Uri): Result<Unit> = runCatching {
         val flowStartedAt = System.currentTimeMillis()
         val code = uri.getQueryParameter("code").orEmpty()
-        val authenticationRequestId = uri.getQueryParameter("authenticationRequestId").orEmpty()
+        val authenticationRequestId = uri.getQueryParameter("nonce").orEmpty()
         logger.info(
             "Authress",
             "completeAuthenticationRequest() started (redirect received, authenticationRequestId=$authenticationRequestId, " +
