@@ -233,10 +233,10 @@ class AuthressLoginClient(
     // ── completeAuthenticationRequest ───────────────────────────────────────
 
     /**
-     * Completes the flow from the deep link. Mirrors the SDK: a mismatched or
-     * missing pending request is an error, but a 4xx from the token exchange is
-     * treated as success-and-clean-up, because it most often means the code was
-     * already redeemed.
+     * Completes the flow from the deep link. A mismatched or missing pending
+     * request is an error. A failed token exchange is only ever treated as
+     * harmless when a valid session cookie already exists (a verifiable fact,
+     * not a guess) — otherwise it's a real failure and is surfaced as such.
      */
     suspend fun completeAuthenticationRequest(uri: Uri): Result<Unit> = runCatching {
         val flowStartedAt = System.currentTimeMillis()
@@ -301,21 +301,31 @@ class AuthressLoginClient(
             ),
         )
         logAntiAbuseHash(antiAbuseHash, System.currentTimeMillis() - hashStartedAt)
+        // This endpoint is OAuth-shaped (unlike /authentication, which uses its own
+        // camelCase body): grant_type, client_id, redirect_uri and code_verifier are
+        // exactly what @authress/login's own token exchange sends, snake_case included.
         val body = JSONObject()
+            .put("grant_type", "authorization_code")
+            .put("client_id", BuildConfig.AUTHRESS_APPLICATION_ID)
             .put("code", code)
-            .put("codeVerifier", pending.codeVerifier)
-            .put("redirectUri", pending.redirectUrl)
+            .put("code_verifier", pending.codeVerifier)
+            .put("redirect_uri", pending.redirectUrl)
             .put("antiAbuseHash", antiAbuseHash)
 
         try {
             post("/authentication/$effectiveAuthenticationRequestId/tokens", body)
         } catch (e: AuthressException) {
-            val status = e.status
-            if (status != null && status < 500) {
-                // Code already used — the session is established, nothing to do.
-                logger.info("Authress", "token exchange returned $status, treating code as already redeemed")
+            // Always log what Authress actually said — status and body — rather than
+            // guessing at the meaning of a status code. The one case genuinely safe to
+            // continue past is verifiable, not assumed: a session cookie is already on
+            // hand, meaning some earlier exchange (e.g. a duplicate redirect delivery)
+            // already completed this login. Anything else is a real failure and must
+            // surface to the user, not be silently treated as success.
+            logger.error("Authress", "token exchange failed: ${e.message}", e)
+            if (getToken() != null) {
+                logger.info("Authress", "a valid session cookie is already present; treating this failure as a harmless duplicate")
                 storage.setAuthenticationRequest(null)
-                _sessionEstablished.value = getToken() != null
+                _sessionEstablished.value = true
                 _authStatus.value = AuthStatus.Idle
                 return@runCatching
             }
