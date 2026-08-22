@@ -18,8 +18,16 @@ interface ThreadDao {
     @Query("SELECT * FROM threads WHERE accountId = :accountId AND status = :status ORDER BY lastSignalAt DESC")
     fun pagingSource(accountId: String, status: String): PagingSource<Int, ThreadEntity>
 
+    /** Backs the "All" inbox tab — every thread for the account, regardless of status. */
+    @Query("SELECT * FROM threads WHERE accountId = :accountId ORDER BY lastSignalAt DESC")
+    fun pagingSourceAll(accountId: String): PagingSource<Int, ThreadEntity>
+
     @Query("SELECT * FROM threads WHERE accountId = :accountId AND status = :status ORDER BY lastSignalAt DESC")
     fun observeByStatus(accountId: String, status: String): Flow<List<ThreadEntity>>
+
+    /** Backs the Inbox badge in the nav drawer. */
+    @Query("SELECT COUNT(*) FROM threads WHERE accountId = :accountId AND status = :status")
+    fun observeCountByStatus(accountId: String, status: String): Flow<Int>
 
     @Query(
         "SELECT * FROM threads WHERE accountId = :accountId AND status = :status " +
@@ -66,4 +74,11 @@ interface ThreadDao {
 
     @Query("DELETE FROM threads WHERE accountId = :accountId")
     suspend fun clearAccount(accountId: String)
+
+    /**
+     * Scoped clear used ahead of a status-filtered refresh, so refreshing one
+     * tab (e.g. Archived) doesn't wipe another tab's (e.g. Active) cached rows.
+     */
+    @Query("DELETE FROM threads WHERE accountId = :accountId AND status = :status")
+    suspend fun clearAccountStatus(accountId: String, status: String)
 }

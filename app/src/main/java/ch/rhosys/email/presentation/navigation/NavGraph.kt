@@ -25,6 +25,7 @@ import ch.rhosys.email.presentation.labels.LabelsScreen
 import ch.rhosys.email.presentation.onboarding.FeatureTourDialog
 import ch.rhosys.email.presentation.onboarding.OnboardingScreen
 import ch.rhosys.email.presentation.quarantine.QuarantineScreen
+import ch.rhosys.email.presentation.resources.ResourcesScreen
 import ch.rhosys.email.presentation.rules.RulesScreen
 import ch.rhosys.email.presentation.settings.SettingsScreen
 import ch.rhosys.email.presentation.stats.StatsScreen
@@ -103,7 +104,6 @@ private fun AppNavHost() {
                 Destination.Settings.route,
             ) {
                 SettingsScreen(
-                    onNavigateStats = { navController.navigate(Destination.Stats.route) },
                     onSignedOut = {
                         navController.navigate(Destination.Inbox.route) {
                             popUpTo(0)
@@ -112,6 +112,7 @@ private fun AppNavHost() {
                 )
             }
             composable(Destination.Stats.route) { StatsScreen() }
+            composable(Destination.Resources.route) { ResourcesScreen() }
             composable(
                 Destination.Thread.route,
                 arguments = listOf(navArgument("threadId") { type = NavType.StringType }),

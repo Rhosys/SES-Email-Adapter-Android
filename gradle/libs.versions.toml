@@ -63,6 +63,7 @@ coil-compose                = { module = "io.coil-kt:coil-compose",             
 markwon-core                = { module = "io.noties.markwon:core",                        version.ref = "markwon" }
 markwon-ext-strikethrough    = { module = "io.noties.markwon:ext-strikethrough",          version.ref = "markwon" }
 markwon-linkify              = { module = "io.noties.markwon:linkify",                    version.ref = "markwon" }
+markwon-html                 = { module = "io.noties.markwon:html",                       version.ref = "markwon" }
 
 paging-runtime               = { module = "androidx.paging:paging-runtime-ktx",           version.ref = "paging" }
 paging-compose                = { module = "androidx.paging:paging-compose",              version.ref = "paging" }

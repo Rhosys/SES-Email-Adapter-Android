@@ -5,10 +5,12 @@ import ch.rhosys.email.data.local.dao.AccountDao
 import ch.rhosys.email.data.local.entity.toDomain
 import ch.rhosys.email.data.local.entity.toEntity
 import ch.rhosys.email.data.remote.api.EmailApiService
+import ch.rhosys.email.data.remote.dto.PatchAccountRequest
 import ch.rhosys.email.data.remote.dto.PatchAliasRequest
 import ch.rhosys.email.data.remote.dto.SetAliasSenderRequest
 import ch.rhosys.email.data.remote.dto.toDomain
 import ch.rhosys.email.domain.model.Account
+import ch.rhosys.email.domain.model.AfterSendAction
 import ch.rhosys.email.domain.model.Alias
 import ch.rhosys.email.domain.model.AliasSender
 import ch.rhosys.email.domain.model.SenderPolicy
@@ -77,5 +79,10 @@ class AccountRepositoryImpl(
     ) {
         val updated = api.patchAlias(accountId, alias, PatchAliasRequest(policy.wire))
         dao.upsertAliases(listOf(updated.toDomain(accountId).toEntity()))
+    }
+
+    override suspend fun updateAccountSettings(accountId: String, retentionDuration: String?, afterSendAction: AfterSendAction?) {
+        val updated = api.patchAccount(accountId, PatchAccountRequest(retentionDuration = retentionDuration, afterSendAction = afterSendAction?.wire))
+        dao.upsertAll(listOf(updated.toDomain().toEntity()))
     }
 }

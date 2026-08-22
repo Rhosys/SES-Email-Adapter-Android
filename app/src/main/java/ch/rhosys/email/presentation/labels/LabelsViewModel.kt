@@ -27,9 +27,9 @@ class LabelsViewModel(
         labelRepository.observeLabels(accountId)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun create(name: String, color: String?, icon: String?) {
+    fun create(name: String, color: String?, icon: String?, applyInstruction: String) {
         val accountId = activeAccountId.value ?: return
-        viewModelScope.launch { labelRepository.create(accountId, name, color, icon) }
+        viewModelScope.launch { labelRepository.create(accountId, name, color, icon, applyInstruction) }
     }
 
     fun update(label: Label) {

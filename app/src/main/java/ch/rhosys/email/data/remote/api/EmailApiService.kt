@@ -25,7 +25,10 @@ import ch.rhosys.email.data.remote.dto.PatchLabelRequest
 import ch.rhosys.email.data.remote.dto.PatchRuleRequest
 import ch.rhosys.email.data.remote.dto.PatchSignalRequest
 import ch.rhosys.email.data.remote.dto.PatchThreadRequest
+import ch.rhosys.email.data.remote.dto.PatchResourceRequest
 import ch.rhosys.email.data.remote.dto.QuarantineResponseRequest
+import ch.rhosys.email.data.remote.dto.ResourceDto
+import ch.rhosys.email.data.remote.dto.ResourceListResponse
 import ch.rhosys.email.data.remote.dto.RuleDto
 import ch.rhosys.email.data.remote.dto.RuleListResponse
 import ch.rhosys.email.data.remote.dto.SetAliasSenderRequest
@@ -153,6 +156,23 @@ interface EmailApiService {
         @Path("accountId") accountId: String,
         @Path("threadId") threadId: String,
     ): UnsubscribeResultDto
+
+    // ── Resources ───────────────────────────────────────────────────────────
+
+    @GET("accounts/{accountId}/resources")
+    suspend fun getResources(
+        @Path("accountId") accountId: String,
+        @Query("status") status: String? = null,
+        @Query("cursor") cursor: String? = null,
+        @Query("limit") limit: Int? = null,
+    ): ResourceListResponse
+
+    @PATCH("accounts/{accountId}/resources/{resourceId}")
+    suspend fun patchResource(
+        @Path("accountId") accountId: String,
+        @Path("resourceId") resourceId: String,
+        @Body body: PatchResourceRequest,
+    ): ResourceDto
 
     // ── Signals ─────────────────────────────────────────────────────────────
 

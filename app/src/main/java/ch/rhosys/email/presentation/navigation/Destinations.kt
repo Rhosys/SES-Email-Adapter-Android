@@ -12,6 +12,7 @@ sealed class Destination(val route: String) {
     data object Templates : Destination("templates")
     data object Settings : Destination("settings")
     data object Stats : Destination("stats")
+    data object Resources : Destination("resources")
 
     data object Thread : Destination("thread/{threadId}") {
         fun route(threadId: String) = "thread/$threadId"
@@ -26,8 +27,15 @@ sealed class Destination(val route: String) {
         /**
          * Spam, Admin, Billing and Support are absent: the API backs none of
          * them. Filtered mail surfaces under Quarantine, which maps to signal
-         * status plus quarantineResponse.
+         * status plus quarantineResponse. Archived/All live as tabs inside
+         * Inbox (matching the web app's InboxTabBar) rather than as separate
+         * drawer entries.
+         *
+         * [drawerMainItems] are the primary mailbox destinations at the top of
+         * the drawer; [drawerConfigItems] are configuration destinations
+         * pinned to the bottom, mirroring the web sidebar's layout.
          */
-        val drawerItems = listOf(Inbox, Quarantine, Drafts, Rules, Templates, Labels, Settings)
+        val drawerMainItems = listOf(Inbox, Quarantine, Drafts, Resources)
+        val drawerConfigItems = listOf(Rules, Templates, Labels, Settings)
     }
 }

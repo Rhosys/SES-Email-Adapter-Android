@@ -15,21 +15,33 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -55,33 +67,56 @@ fun InboxScreen(onThreadClick: (String) -> Unit) {
     }
     val uiState by viewModel.uiState.collectAsState()
     val threads = viewModel.threads.collectAsLazyPagingItems()
+    var showBulkArchiveConfirm by remember { mutableStateOf(false) }
+    var showBulkDeleteConfirm by remember { mutableStateOf(false) }
 
-    PullToRefreshBox(
-        isRefreshing = uiState.isRefreshing,
-        onRefresh = { viewModel.refresh() },
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        if (threads.itemCount == 0) {
-            EmptyState(
-                title = "Inbox zero",
-                message = "You're all caught up. New mail will show up here.",
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (uiState.isSelectionMode) {
+            SelectionActionBar(
+                selectedCount = uiState.selectedIds.size,
+                onCancel = { viewModel.clearSelection() },
+                onArchive = { showBulkArchiveConfirm = true },
+                onDelete = { showBulkDeleteConfirm = true },
             )
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(threads.itemCount) { index ->
-                    val thread = threads[index] ?: return@items
-                    InboxRow(
-                        thread = thread,
-                        isSelected = thread.threadId in uiState.selectedIds,
-                        isSelectionMode = uiState.isSelectionMode,
-                        onClick = {
-                            if (uiState.isSelectionMode) viewModel.toggleSelection(thread.threadId) else onThreadClick(thread.threadId)
-                        },
-                        onLongClick = { viewModel.enterSelectionMode(thread.threadId) },
-                        onArchive = { viewModel.archive(thread.threadId) },
-                        onDelay = { viewModel.openSnoozePicker(thread.threadId) },
-                        onDelete = { viewModel.delete(thread.threadId) },
-                    )
+            InboxTabBar(selected = uiState.tab, onSelect = viewModel::selectTab)
+        }
+
+        PullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = { viewModel.refresh() },
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            if (threads.itemCount == 0) {
+                EmptyState(
+                    title = when (uiState.tab) {
+                        InboxTab.ACTIVE -> "Inbox zero"
+                        InboxTab.ARCHIVED -> "Nothing archived"
+                        InboxTab.ALL -> "No threads yet"
+                    },
+                    message = when (uiState.tab) {
+                        InboxTab.ACTIVE -> "You're all caught up. New mail will show up here."
+                        InboxTab.ARCHIVED -> "Threads you archive will show up here."
+                        InboxTab.ALL -> "Every thread, regardless of status, will show up here."
+                    },
+                )
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(threads.itemCount) { index ->
+                        val thread = threads[index] ?: return@items
+                        InboxRow(
+                            thread = thread,
+                            isSelected = thread.threadId in uiState.selectedIds,
+                            isSelectionMode = uiState.isSelectionMode,
+                            onClick = {
+                                if (uiState.isSelectionMode) viewModel.toggleSelection(thread.threadId) else onThreadClick(thread.threadId)
+                            },
+                            onLongClick = { viewModel.enterSelectionMode(thread.threadId) },
+                            onArchive = { viewModel.archive(thread.threadId) },
+                            onDelay = { viewModel.openSnoozePicker(thread.threadId) },
+                            onDelete = { viewModel.delete(thread.threadId) },
+                        )
+                    }
                 }
             }
         }
@@ -91,6 +126,84 @@ fun InboxScreen(onThreadClick: (String) -> Unit) {
         DelayPickerSheet(
             onDismiss = { viewModel.dismissSnoozePicker() },
             onConfirm = { millis -> viewModel.confirmSnooze(millis) },
+        )
+    }
+
+    if (showBulkArchiveConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBulkArchiveConfirm = false },
+            title = { Text("Archive ${uiState.selectedIds.size} threads?") },
+            text = { Text("These threads will be moved to your archive.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBulkArchiveConfirm = false
+                    viewModel.bulkArchive()
+                }) { Text("Archive") }
+            },
+            dismissButton = { TextButton(onClick = { showBulkArchiveConfirm = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (showBulkDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBulkDeleteConfirm = false },
+            title = { Text("Delete ${uiState.selectedIds.size} threads?") },
+            text = { Text("These threads will be permanently deleted. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBulkDeleteConfirm = false
+                    viewModel.bulkDelete()
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { showBulkDeleteConfirm = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+/** Selection-mode action bar shown instead of the tab bar while bulk-selecting threads. */
+@Composable
+private fun SelectionActionBar(
+    selectedCount: Int,
+    onCancel: () -> Unit,
+    onArchive: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") }
+        Text(
+            "$selectedCount selected",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f).padding(start = 4.dp),
+        )
+        IconButton(onClick = onArchive) { Icon(Icons.Filled.Archive, contentDescription = "Archive selected") }
+        IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Delete selected") }
+    }
+}
+
+/** Mirrors the web app's Inbox tab bar: Active / Archived / All. */
+@Composable
+private fun InboxTabBar(selected: InboxTab, onSelect: (InboxTab) -> Unit) {
+    TabRow(selectedTabIndex = selected.ordinal) {
+        Tab(
+            selected = selected == InboxTab.ACTIVE,
+            onClick = { onSelect(InboxTab.ACTIVE) },
+            text = { Text("Inbox") },
+        )
+        Tab(
+            selected = selected == InboxTab.ARCHIVED,
+            onClick = { onSelect(InboxTab.ARCHIVED) },
+            text = { Text("Archived") },
+        )
+        Tab(
+            selected = selected == InboxTab.ALL,
+            onClick = { onSelect(InboxTab.ALL) },
+            text = { Text("All") },
         )
     }
 }
@@ -111,25 +224,52 @@ private fun InboxRow(
     onDelay: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    // Trigger the reveal at half the swipe distance instead of requiring a
+    // near-complete swipe before the action row becomes usable.
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { false },
+        positionalThreshold = { totalDistance -> totalDistance * 0.5f },
     )
+    var showArchiveConfirm by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showOverflowMenu by remember { mutableStateOf(false) }
 
     SwipeToDismissBox(
         state = dismissState,
         backgroundContent = {
+            // Icons live at the edge the swipe is revealing them from: docked
+            // right when swiping left (EndToStart), left when swiping right
+            // (StartToEnd) — otherwise they stay hidden off-screen until the
+            // row is almost fully swiped open.
+            val revealingFromStart = dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd
             Row(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = if (revealingFromStart) Arrangement.Start else Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onArchive) { Icon(Icons.Filled.Archive, contentDescription = "Archive") }
+                IconButton(onClick = { showArchiveConfirm = true }) {
+                    Icon(Icons.Filled.Archive, contentDescription = "Archive")
+                }
                 IconButton(onClick = onDelay) { Icon(Icons.Filled.Schedule, contentDescription = "Delay") }
-                IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Delete") }
                 IconButton(onClick = { /* label picker */ }) { Icon(Icons.Filled.Label, contentDescription = "Add label") }
+                Box {
+                    IconButton(onClick = { showOverflowMenu = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "More")
+                    }
+                    DropdownMenu(expanded = showOverflowMenu, onDismissRequest = { showOverflowMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Delete") },
+                            leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                showDeleteConfirm = true
+                            },
+                        )
+                    }
+                }
             }
         },
     ) {
@@ -178,5 +318,35 @@ private fun InboxRow(
                 )
             }
         }
+    }
+
+    if (showArchiveConfirm) {
+        AlertDialog(
+            onDismissRequest = { showArchiveConfirm = false },
+            title = { Text("Archive thread?") },
+            text = { Text("This thread will be moved to your archive.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showArchiveConfirm = false
+                    onArchive()
+                }) { Text("Archive") }
+            },
+            dismissButton = { TextButton(onClick = { showArchiveConfirm = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete thread?") },
+            text = { Text("This thread will be permanently deleted. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    onDelete()
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } },
+        )
     }
 }

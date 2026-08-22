@@ -7,6 +7,9 @@ import ch.rhosys.email.domain.model.Attachment
 import ch.rhosys.email.domain.model.EmailAddress
 import ch.rhosys.email.domain.model.Label
 import ch.rhosys.email.domain.model.MailThread
+import ch.rhosys.email.domain.model.Resource
+import ch.rhosys.email.domain.model.ResourceAsset
+import ch.rhosys.email.domain.model.ResourceStatus
 import ch.rhosys.email.domain.model.Rule
 import ch.rhosys.email.domain.model.RuleAction
 import ch.rhosys.email.domain.model.RuleActionType
@@ -140,6 +143,7 @@ internal fun LabelDto.toDomain(accountId: String) = Label(
     name = name,
     color = color,
     icon = icon,
+    applyInstruction = applyInstruction,
     createdAt = createdAt.toInstantOrNull(),
 )
 
@@ -175,4 +179,26 @@ internal fun AliasSenderDto.toDomain() = AliasSender(
     alias = alias,
     sender = sender,
     policy = SenderPolicy.fromWire(policy),
+)
+
+internal fun ResourceAssetDto.toDomain() = ResourceAsset(
+    type = type,
+    label = label,
+    rawValue = rawValue,
+    sourceSignalId = sourceSignalId,
+    url = url,
+    extractedAt = extractedAt.toInstantOrNull(),
+)
+
+internal fun ResourceDto.toDomain() = Resource(
+    resourceId = resourceId,
+    threadId = threadId,
+    workflow = Workflow.fromWire(workflow),
+    status = ResourceStatus.fromWire(status),
+    expectedResolutionDate = expectedResolutionDate.toInstantOrNull(),
+    displayDate = displayDate,
+    resolvedAt = resolvedAt.toInstantOrNull(),
+    assets = assets.map { it.toDomain() },
+    createdAt = createdAt.toInstantOrNull(),
+    updatedAt = updatedAt.toInstantOrNull(),
 )

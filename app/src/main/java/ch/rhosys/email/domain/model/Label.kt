@@ -12,6 +12,8 @@ data class Label(
     val name: String,
     val color: String?,
     val icon: String?,
+    /** Freeform guidance the auto-labeling rules use to decide when this label applies. */
+    val applyInstruction: String,
     val createdAt: Instant?,
 )
 

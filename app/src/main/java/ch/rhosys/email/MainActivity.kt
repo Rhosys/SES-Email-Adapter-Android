@@ -3,6 +3,7 @@ package ch.rhosys.email
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,12 +18,22 @@ import ch.rhosys.email.presentation.auth.BiometricLockScreen
 import ch.rhosys.email.presentation.navigation.RootNavGraph
 import ch.rhosys.email.sync.SyncForegroundService
 import ch.rhosys.email.ui.theme.EmailTheme
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
+    private var realtimeJob: Job? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Forced automatically on Android 15+ (targetSdk 35) but not on older
+        // OSes, which left decorFitsSystemWindows=true there while TopAppBar's
+        // own statusBars inset padding assumed edge-to-edge — the two together
+        // reserved the status bar's height twice, showing as a blank strip
+        // above the header on API < 35 devices. Calling this explicitly makes
+        // the behavior consistent everywhere the app's minSdk supports.
+        enableEdgeToEdge()
         val appContainer = (application as EmailApp).appContainer
 
         // The Authress redirect can arrive either as the intent that started the
@@ -78,9 +89,21 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         super.onStart()
         SyncForegroundService.start(this)
+        val appContainer = (application as EmailApp).appContainer
+        // Live updates only while foregrounded — no FCM/push service needed to
+        // get them; decision #29's fetch-on-open + pull-to-refresh still covers
+        // the backgrounded case.
+        realtimeJob = lifecycleScope.launch {
+            appContainer.accountRepository.activeAccountId().filterNotNull().collect { accountId ->
+                appContainer.realtimeClient.start(accountId)
+            }
+        }
     }
 
     override fun onStop() {
+        realtimeJob?.cancel()
+        realtimeJob = null
+        (application as EmailApp).appContainer.realtimeClient.stop()
         SyncForegroundService.stop(this)
         super.onStop()
     }

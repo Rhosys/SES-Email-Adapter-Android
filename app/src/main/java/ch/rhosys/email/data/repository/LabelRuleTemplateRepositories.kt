@@ -39,15 +39,19 @@ class LabelRepositoryImpl(
         dao.upsertAll(labels.map { it.toDomain(accountId).toEntity() })
     }
 
-    override suspend fun create(accountId: String, name: String, color: String?, icon: String?) {
-        val created = api.createLabel(accountId, CreateLabelRequest(name, color, icon))
+    override suspend fun create(accountId: String, name: String, color: String?, icon: String?, applyInstruction: String) {
+        val created = api.createLabel(accountId, CreateLabelRequest(name = name, applyInstruction = applyInstruction, color = color, icon = icon))
         dao.upsert(created.toDomain(accountId).toEntity())
     }
 
     override suspend fun update(accountId: String, label: Label) {
         dao.upsert(label.toEntity())
         runCatching {
-            api.patchLabel(accountId, label.label, PatchLabelRequest(label.name, label.color, label.icon))
+            api.patchLabel(
+                accountId,
+                label.label,
+                PatchLabelRequest(name = label.name, applyInstruction = label.applyInstruction, color = label.color, icon = label.icon),
+            )
         }.onSuccess { dao.upsert(it.toDomain(accountId).toEntity()) }
     }
 

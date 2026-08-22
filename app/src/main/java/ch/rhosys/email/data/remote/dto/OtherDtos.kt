@@ -11,6 +11,7 @@ data class LabelDto(
     val name: String,
     val color: String? = null,
     val icon: String? = null,
+    val applyInstruction: String = "",
     val createdAt: String,
 )
 
@@ -22,6 +23,7 @@ data class LabelListResponse(
 @JsonClass(generateAdapter = true)
 data class CreateLabelRequest(
     val name: String,
+    val applyInstruction: String,
     val color: String? = null,
     val icon: String? = null,
 )
@@ -29,6 +31,7 @@ data class CreateLabelRequest(
 @JsonClass(generateAdapter = true)
 data class PatchLabelRequest(
     val name: String? = null,
+    val applyInstruction: String? = null,
     val color: String? = null,
     val icon: String? = null,
 )

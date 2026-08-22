@@ -10,9 +10,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
+import io.noties.markwon.html.HtmlPlugin
 import io.noties.markwon.linkify.LinkifyPlugin
 
-/** Decision #79: Markwon renders Markdown message bodies, wrapped for Compose. */
+/**
+ * Decision #79: Markwon renders Markdown message bodies, wrapped for Compose.
+ * Signal bodies are frequently raw HTML (inbound/outbound email content), not
+ * Markdown, so [HtmlPlugin] is registered too — without it, Markwon escapes
+ * HTML tags and they show up as literal text instead of being rendered.
+ */
 @Composable
 fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
@@ -21,6 +27,7 @@ fun MarkdownText(markdown: String, modifier: Modifier = Modifier) {
         Markwon.builder(context)
             .usePlugin(StrikethroughPlugin.create())
             .usePlugin(LinkifyPlugin.create())
+            .usePlugin(HtmlPlugin.create())
             .build()
     }
     AndroidView(

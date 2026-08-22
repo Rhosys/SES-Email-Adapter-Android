@@ -25,6 +25,7 @@ data class LabelEntity(
     val name: String,
     val color: String?,
     val icon: String?,
+    val applyInstruction: String,
     val createdAt: Long?,
 )
 
@@ -71,6 +72,7 @@ fun LabelEntity.toDomain() = Label(
     name = name,
     color = color,
     icon = icon,
+    applyInstruction = applyInstruction,
     createdAt = createdAt?.let(Instant::ofEpochMilli),
 )
 
@@ -80,6 +82,7 @@ fun Label.toEntity() = LabelEntity(
     name = name,
     color = color,
     icon = icon,
+    applyInstruction = applyInstruction,
     createdAt = createdAt?.toEpochMilli(),
 )
 
