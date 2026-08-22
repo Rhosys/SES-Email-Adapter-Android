@@ -18,10 +18,13 @@ import ch.rhosys.email.presentation.auth.BiometricLockScreen
 import ch.rhosys.email.presentation.navigation.RootNavGraph
 import ch.rhosys.email.sync.SyncForegroundService
 import ch.rhosys.email.ui.theme.EmailTheme
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : FragmentActivity() {
+    private var realtimeJob: Job? = null
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Forced automatically on Android 15+ (targetSdk 35) but not on older
@@ -86,9 +89,21 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         super.onStart()
         SyncForegroundService.start(this)
+        val appContainer = (application as EmailApp).appContainer
+        // Live updates only while foregrounded — no FCM/push service needed to
+        // get them; decision #29's fetch-on-open + pull-to-refresh still covers
+        // the backgrounded case.
+        realtimeJob = lifecycleScope.launch {
+            appContainer.accountRepository.activeAccountId().filterNotNull().collect { accountId ->
+                appContainer.realtimeClient.start(accountId)
+            }
+        }
     }
 
     override fun onStop() {
+        realtimeJob?.cancel()
+        realtimeJob = null
+        (application as EmailApp).appContainer.realtimeClient.stop()
         SyncForegroundService.stop(this)
         super.onStop()
     }

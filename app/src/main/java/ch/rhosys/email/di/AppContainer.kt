@@ -8,6 +8,7 @@ import ch.rhosys.email.data.auth.AuthressLoginClient
 import ch.rhosys.email.data.auth.TokenStore
 import ch.rhosys.email.data.local.EmailDatabase
 import ch.rhosys.email.data.log.AppLogger
+import ch.rhosys.email.data.realtime.RealtimeClient
 import ch.rhosys.email.data.remote.api.ApiLoggingInterceptor
 import ch.rhosys.email.data.remote.api.AuthInterceptor
 import ch.rhosys.email.data.remote.api.EmailApiService
@@ -108,6 +109,45 @@ class AppContainer(private val context: Context) {
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
             .create(EmailApiService::class.java)
+    }
+
+    /**
+     * Same host as [EmailApiService], scheme swapped for the WebSocket
+     * upgrade — mirrors the web app's WS_BASE derivation in
+     * workers/realtime.shared.ts.
+     */
+    private val wsBaseUrl: String by lazy {
+        BuildConfig.API_BASE_URL.trimEnd('/')
+            .replaceFirst("https://", "wss://")
+            .replaceFirst("http://", "ws://")
+    }
+
+    /** A WebSocket is long-lived, so it needs no read timeout — unlike [okHttpClient]. */
+    private val wsHttpClient: OkHttpClient by lazy {
+        authHttpClient.newBuilder()
+            .readTimeout(0, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
+     * Live thread updates while the app is foregrounded (decision: no FCM/push
+     * notification service required to get realtime updates out of the gate).
+     * Refreshing through [threadRepository] into Room means every Flow-backed
+     * list and badge picks the change up automatically — no separate wiring.
+     */
+    val realtimeClient: RealtimeClient by lazy {
+        RealtimeClient(
+            wsBaseUrl = wsBaseUrl,
+            httpClient = wsHttpClient,
+            authManager = authManager,
+            logger = appLogger,
+            onThreadUpdated = { accountId, threadId ->
+                runCatching {
+                    threadRepository.refreshThread(accountId, threadId)
+                    threadRepository.refreshSignals(accountId, threadId)
+                }
+            },
+        )
     }
 
     val database: EmailDatabase by lazy {

@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -96,7 +97,7 @@ private fun ThemeTile(
 
     Box(
         modifier = modifier
-            .height(168.dp)
+            .height(184.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(palette.base)
             .border(
@@ -134,24 +135,57 @@ private fun ThemeTile(
                 }
             }
 
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(palette.mantle)
                     .padding(horizontal = 10.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    name,
-                    color = palette.text,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(mode, color = palette.subtext0, fontSize = 11.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        name,
+                        color = palette.text,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(mode, color = palette.subtext0, fontSize = 11.sp)
+                }
+                if (flavor != null) {
+                    // Concrete proof the flavours are actually different colors,
+                    // not just the same palette re-skinned: the base color swatch
+                    // plus its hex value, which differs for every flavour.
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(palette.base)
+                                .border(1.dp, palette.overlay0, RoundedCornerShape(3.dp)),
+                        )
+                        Text(
+                            palette.base.toHexLabel(),
+                            color = palette.subtext0,
+                            fontSize = 10.sp,
+                        )
+                    }
+                }
             }
         }
     }
+}
+
+/** e.g. "#1E1E2E" — proof-of-difference label under each theme tile's swatch. */
+private fun Color.toHexLabel(): String {
+    val argb = toArgb()
+    return "#" + (argb and 0x00FFFFFF).toString(16).padStart(6, '0').uppercase()
 }
 
 /** A miniature mail row plus the accent ramp — the parts a flavour actually changes. */

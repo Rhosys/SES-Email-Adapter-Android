@@ -51,6 +51,9 @@ interface ThreadRepository {
     fun search(accountId: String, query: String): Flow<List<MailThread>>
 
     suspend fun refreshThreads(accountId: String, status: ThreadStatus?)
+
+    /** Pulls a single thread fresh — backs realtime `thread:updated` events. */
+    suspend fun refreshThread(accountId: String, threadId: String)
     suspend fun refreshSignals(accountId: String, threadId: String)
 
     suspend fun archive(accountId: String, threadId: String)

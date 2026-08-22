@@ -73,6 +73,11 @@ class ThreadRepositoryImpl(
         threadDao.upsertAll(page.threads.map { it.toDomain(accountId).toEntity() })
     }
 
+    override suspend fun refreshThread(accountId: String, threadId: String) {
+        val dto = api.getThread(accountId, threadId)
+        threadDao.upsert(dto.toDomain(accountId).toEntity(isPendingSync = false))
+    }
+
     override suspend fun refreshSignals(accountId: String, threadId: String) {
         val page = api.getThreadSignals(accountId, threadId)
         signalDao.upsertAll(page.signals.map { it.toDomain().toEntity(accountId) })

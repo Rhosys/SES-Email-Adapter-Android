@@ -278,6 +278,7 @@ private fun ForwardingTab(
         }
         item { Text("Forwarding addresses", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp)) }
         items(uiState.forwardingTargets, key = { it.target }) { target ->
+            var showRemoveConfirm by remember { mutableStateOf(false) }
             ListItem(
                 headlineContent = { Text(target.target) },
                 supportingContent = { Text(target.status.replaceFirstChar { it.uppercase() }) },
@@ -286,10 +287,24 @@ private fun ForwardingTab(
                         if (target.status != "verified") {
                             TextButton(onClick = { onVerifyForwarding(target.target) }) { Text("Verify") }
                         }
-                        TextButton(onClick = { onRemoveForwarding(target.target) }) { Text("Remove") }
+                        TextButton(onClick = { showRemoveConfirm = true }) { Text("Remove") }
                     }
                 },
             )
+            if (showRemoveConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showRemoveConfirm = false },
+                    title = { Text("Remove forwarding address?") },
+                    text = { Text("Mail will stop forwarding to ${target.target}.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showRemoveConfirm = false
+                            onRemoveForwarding(target.target)
+                        }) { Text("Remove") }
+                    },
+                    dismissButton = { TextButton(onClick = { showRemoveConfirm = false }) { Text("Cancel") } },
+                )
+            }
         }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -322,6 +337,7 @@ private fun UsersTab(uiState: SettingsUiState) {
 private fun LogsTab(uiState: SettingsUiState, onClear: () -> Unit) {
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    var showClearConfirm by remember { mutableStateOf(false) }
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
@@ -339,7 +355,7 @@ private fun LogsTab(uiState: SettingsUiState, onClear: () -> Unit) {
                     context.startActivity(Intent.createChooser(intent, "Share logs"))
                 },
             ) { Text("Share") }
-            TextButton(enabled = uiState.logs.isNotEmpty(), onClick = onClear) { Text("Clear") }
+            TextButton(enabled = uiState.logs.isNotEmpty(), onClick = { showClearConfirm = true }) { Text("Clear") }
         }
         HorizontalDivider()
         if (uiState.logs.isEmpty()) {
@@ -365,6 +381,21 @@ private fun LogsTab(uiState: SettingsUiState, onClear: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            title = { Text("Clear logs?") },
+            text = { Text("This will permanently delete the diagnostic log on this device.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showClearConfirm = false
+                    onClear()
+                }) { Text("Clear") }
+            },
+            dismissButton = { TextButton(onClick = { showClearConfirm = false }) { Text("Cancel") } },
+        )
     }
 }
 

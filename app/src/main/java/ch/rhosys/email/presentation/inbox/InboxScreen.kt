@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.MoreVert
@@ -66,9 +67,20 @@ fun InboxScreen(onThreadClick: (String) -> Unit) {
     }
     val uiState by viewModel.uiState.collectAsState()
     val threads = viewModel.threads.collectAsLazyPagingItems()
+    var showBulkArchiveConfirm by remember { mutableStateOf(false) }
+    var showBulkDeleteConfirm by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        InboxTabBar(selected = uiState.tab, onSelect = viewModel::selectTab)
+        if (uiState.isSelectionMode) {
+            SelectionActionBar(
+                selectedCount = uiState.selectedIds.size,
+                onCancel = { viewModel.clearSelection() },
+                onArchive = { showBulkArchiveConfirm = true },
+                onDelete = { showBulkDeleteConfirm = true },
+            )
+        } else {
+            InboxTabBar(selected = uiState.tab, onSelect = viewModel::selectTab)
+        }
 
         PullToRefreshBox(
             isRefreshing = uiState.isRefreshing,
@@ -115,6 +127,62 @@ fun InboxScreen(onThreadClick: (String) -> Unit) {
             onDismiss = { viewModel.dismissSnoozePicker() },
             onConfirm = { millis -> viewModel.confirmSnooze(millis) },
         )
+    }
+
+    if (showBulkArchiveConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBulkArchiveConfirm = false },
+            title = { Text("Archive ${uiState.selectedIds.size} threads?") },
+            text = { Text("These threads will be moved to your archive.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBulkArchiveConfirm = false
+                    viewModel.bulkArchive()
+                }) { Text("Archive") }
+            },
+            dismissButton = { TextButton(onClick = { showBulkArchiveConfirm = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (showBulkDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showBulkDeleteConfirm = false },
+            title = { Text("Delete ${uiState.selectedIds.size} threads?") },
+            text = { Text("These threads will be permanently deleted. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showBulkDeleteConfirm = false
+                    viewModel.bulkDelete()
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { showBulkDeleteConfirm = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+/** Selection-mode action bar shown instead of the tab bar while bulk-selecting threads. */
+@Composable
+private fun SelectionActionBar(
+    selectedCount: Int,
+    onCancel: () -> Unit,
+    onArchive: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onCancel) { Icon(Icons.Filled.Close, contentDescription = "Cancel selection") }
+        Text(
+            "$selectedCount selected",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f).padding(start = 4.dp),
+        )
+        IconButton(onClick = onArchive) { Icon(Icons.Filled.Archive, contentDescription = "Archive selected") }
+        IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Delete selected") }
     }
 }
 
