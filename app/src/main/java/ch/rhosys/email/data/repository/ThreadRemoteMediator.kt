@@ -18,7 +18,7 @@ import ch.rhosys.email.domain.model.ThreadStatus
 @OptIn(ExperimentalPagingApi::class)
 class ThreadRemoteMediator(
     private val accountId: String,
-    private val status: ThreadStatus,
+    private val status: ThreadStatus?,
     private val api: EmailApiService,
     private val db: EmailDatabase,
 ) : RemoteMediator<Int, ThreadEntity>() {
@@ -39,14 +39,16 @@ class ThreadRemoteMediator(
 
             val page = api.getThreads(
                 accountId = accountId,
-                status = status.wire,
+                status = status?.wire,
                 cursor = cursor,
                 limit = state.config.pageSize,
             )
             nextCursor = page.pagination?.cursor
 
             if (loadType == LoadType.REFRESH) {
-                db.threadDao().clearAccount(accountId)
+                // Scoped to this status when possible, so refreshing one tab
+                // (e.g. Archived) doesn't wipe another tab's (e.g. Active) cache.
+                if (status != null) db.threadDao().clearAccountStatus(accountId, status.wire) else db.threadDao().clearAccount(accountId)
             }
             db.threadDao().upsertAll(page.threads.map { it.toDomain(accountId).toEntity() })
 

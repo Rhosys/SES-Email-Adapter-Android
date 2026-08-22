@@ -36,7 +36,7 @@ import ch.rhosys.email.data.local.entity.ViewEntity
         LabelEntity::class, RuleEntity::class, TemplateEntity::class, ViewEntity::class,
         LogEntryEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

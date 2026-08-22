@@ -133,6 +133,7 @@ dependencies {
     implementation(libs.markwon.core)
     implementation(libs.markwon.ext.strikethrough)
     implementation(libs.markwon.linkify)
+    implementation(libs.markwon.html)
 
     implementation(libs.paging.runtime)
     implementation(libs.paging.compose)

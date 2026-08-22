@@ -11,13 +11,17 @@ import ch.rhosys.email.data.remote.dto.AccountUserDto
 import ch.rhosys.email.data.remote.dto.DnsRecordDto
 import ch.rhosys.email.data.remote.dto.DomainDto
 import ch.rhosys.email.data.remote.dto.ForwardingTargetDto
+import ch.rhosys.email.domain.model.Account
+import ch.rhosys.email.domain.model.AfterSendAction
 import ch.rhosys.email.domain.model.Alias
+import ch.rhosys.email.domain.model.UnknownSenderPolicy
 import ch.rhosys.email.domain.repository.AccountRepository
 import ch.rhosys.email.ui.theme.CatppuccinFlavor
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -32,6 +36,7 @@ data class SettingsUiState(
     val dnsRecords: List<DnsRecordDto> = emptyList(),
     val forwardingTargets: List<ForwardingTargetDto> = emptyList(),
     val accountUsers: List<AccountUserDto> = emptyList(),
+    val currentAccount: Account? = null,
     val themeFlavor: CatppuccinFlavor? = null,
     val biometricLockEnabled: Boolean = false,
     val logs: List<LogEntryEntity> = emptyList(),
@@ -67,6 +72,11 @@ class SettingsViewModel(
         }
         viewModelScope.launch {
             appLogger.observeAll().collect { logs -> _uiState.value = _uiState.value.copy(logs = logs) }
+        }
+        viewModelScope.launch {
+            activeAccountId.filterNotNull().combine(accountRepository.observeAccounts()) { accountId, accounts ->
+                accounts.firstOrNull { it.accountId == accountId }
+            }.collect { account -> _uiState.value = _uiState.value.copy(currentAccount = account) }
         }
     }
 
@@ -127,6 +137,21 @@ class SettingsViewModel(
             runCatching { settingsRepository.getAccountUsers(accountId) }
                 .onSuccess { _uiState.value = _uiState.value.copy(accountUsers = it) }
         }
+    }
+
+    fun setAliasUnknownSenderPolicy(alias: String, policy: UnknownSenderPolicy) {
+        val accountId = activeAccountId.value ?: return
+        viewModelScope.launch { accountRepository.setAliasUnknownSenderPolicy(accountId, alias, policy) }
+    }
+
+    fun updateRetentionDuration(retentionDuration: String) {
+        val accountId = activeAccountId.value ?: return
+        viewModelScope.launch { accountRepository.updateAccountSettings(accountId, retentionDuration = retentionDuration) }
+    }
+
+    fun updateAfterSendAction(afterSendAction: AfterSendAction) {
+        val accountId = activeAccountId.value ?: return
+        viewModelScope.launch { accountRepository.updateAccountSettings(accountId, afterSendAction = afterSendAction) }
     }
 
     fun setThemeFlavor(flavor: CatppuccinFlavor?) = viewModelScope.launch { preferencesStore.setThemeFlavor(flavor) }

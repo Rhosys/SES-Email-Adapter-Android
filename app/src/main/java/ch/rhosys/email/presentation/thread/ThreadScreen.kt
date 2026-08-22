@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.core.text.HtmlCompat
 import ch.rhosys.email.di.LocalAppContainer
 import androidx.compose.ui.platform.LocalUriHandler
 import ch.rhosys.email.domain.model.Attachment
@@ -59,6 +60,8 @@ fun ThreadScreen(accountId: String, threadId: String, onBack: () -> Unit, onRepl
     val signals by viewModel.signals.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     var showMenu by remember { mutableStateOf(false) }
+    var showArchiveConfirm by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
 
     // Unsubscribe returns a URL to open rather than completing server-side.
@@ -77,11 +80,8 @@ fun ThreadScreen(accountId: String, threadId: String, onBack: () -> Unit, onRepl
                     IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.archive(); onBack() }) {
+                    IconButton(onClick = { showArchiveConfirm = true }) {
                         Icon(Icons.Filled.Archive, contentDescription = "Archive")
-                    }
-                    IconButton(onClick = { viewModel.delete(); onBack() }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Delete")
                     }
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Filled.MoreVert, contentDescription = "More")
@@ -91,6 +91,10 @@ fun ThreadScreen(accountId: String, threadId: String, onBack: () -> Unit, onRepl
                             showMenu = false
                             viewModel.openSenderPolicy()
                         }, leadingIcon = { Icon(Icons.Filled.Block, contentDescription = null) })
+                        DropdownMenuItem(text = { Text("Delete") }, onClick = {
+                            showMenu = false
+                            showDeleteConfirm = true
+                        }, leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) })
                     }
                 },
             )
@@ -124,6 +128,38 @@ fun ThreadScreen(accountId: String, threadId: String, onBack: () -> Unit, onRepl
             onSetSenderPolicy = viewModel::setSenderPolicy,
             onSetAliasPolicy = viewModel::setAliasPolicy,
             onDismiss = { viewModel.dismissSenderPolicy() },
+        )
+    }
+
+    if (showArchiveConfirm) {
+        AlertDialog(
+            onDismissRequest = { showArchiveConfirm = false },
+            title = { Text("Archive thread?") },
+            text = { Text("This thread will be moved to your archive.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showArchiveConfirm = false
+                    viewModel.archive()
+                    onBack()
+                }) { Text("Archive") }
+            },
+            dismissButton = { TextButton(onClick = { showArchiveConfirm = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete thread?") },
+            text = { Text("This thread will be permanently deleted. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    viewModel.delete()
+                    onBack()
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } },
         )
     }
 }
@@ -207,6 +243,13 @@ private fun UnsubscribeBar(onUnsubscribe: () -> Unit) {
 }
 
 /**
+ * Signal bodies are frequently HTML; the collapsed one-line preview isn't run
+ * through Markwon, so strip tags here to avoid literal "<div>" markup showing.
+ */
+private fun plainTextPreview(body: String): String =
+    HtmlCompat.fromHtml(body, HtmlCompat.FROM_HTML_MODE_COMPACT).toString().trim()
+
+/**
  * Renders any of the three signal shapes. Attachments open at the URL the
  * backend supplies on the signal — there is no download endpoint.
  */
@@ -263,7 +306,7 @@ private fun SignalCard(
                 }
             } else {
                 Text(
-                    body.take(80),
+                    plainTextPreview(body).take(80),
                     maxLines = 1,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

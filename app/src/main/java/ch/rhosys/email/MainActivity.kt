@@ -3,6 +3,7 @@ package ch.rhosys.email
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,6 +24,13 @@ import kotlinx.coroutines.launch
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Forced automatically on Android 15+ (targetSdk 35) but not on older
+        // OSes, which left decorFitsSystemWindows=true there while TopAppBar's
+        // own statusBars inset padding assumed edge-to-edge — the two together
+        // reserved the status bar's height twice, showing as a blank strip
+        // above the header on API < 35 devices. Calling this explicitly makes
+        // the behavior consistent everywhere the app's minSdk supports.
+        enableEdgeToEdge()
         val appContainer = (application as EmailApp).appContainer
 
         // The Authress redirect can arrive either as the intent that started the

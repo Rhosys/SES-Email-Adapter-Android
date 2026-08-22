@@ -2,9 +2,12 @@ package ch.rhosys.email.domain.repository
 
 import androidx.paging.PagingData
 import ch.rhosys.email.domain.model.Account
+import ch.rhosys.email.domain.model.AfterSendAction
 import ch.rhosys.email.domain.model.Alias
 import ch.rhosys.email.domain.model.Label
 import ch.rhosys.email.domain.model.MailThread
+import ch.rhosys.email.domain.model.Resource
+import ch.rhosys.email.domain.model.ResourceStatus
 import ch.rhosys.email.domain.model.Rule
 import ch.rhosys.email.domain.model.AliasSender
 import ch.rhosys.email.domain.model.SenderPolicy
@@ -32,15 +35,22 @@ interface AccountRepository {
     suspend fun setSenderPolicy(accountId: String, alias: String, domain: String, policy: SenderPolicy)
 
     suspend fun setAliasUnknownSenderPolicy(accountId: String, alias: String, policy: UnknownSenderPolicy)
+
+    /** Account-level compose/retention defaults, e.g. Email & Forwarding settings. */
+    suspend fun updateAccountSettings(accountId: String, retentionDuration: String? = null, afterSendAction: AfterSendAction? = null)
 }
 
 interface ThreadRepository {
-    fun pagedThreads(accountId: String, status: ThreadStatus): Flow<PagingData<MailThread>>
+    /** [status] null means every status — backs the "All" inbox tab. */
+    fun pagedThreads(accountId: String, status: ThreadStatus?): Flow<PagingData<MailThread>>
+
+    /** Backs the Inbox badge in the nav drawer. */
+    fun observeThreadCount(accountId: String, status: ThreadStatus): Flow<Int>
     fun observeThread(threadId: String): Flow<MailThread?>
     fun observeSignals(threadId: String): Flow<List<Signal>>
     fun search(accountId: String, query: String): Flow<List<MailThread>>
 
-    suspend fun refreshThreads(accountId: String, status: ThreadStatus)
+    suspend fun refreshThreads(accountId: String, status: ThreadStatus?)
     suspend fun refreshSignals(accountId: String, threadId: String)
 
     suspend fun archive(accountId: String, threadId: String)
@@ -91,7 +101,7 @@ interface ComposeRepository {
 interface LabelRepository {
     fun observeLabels(accountId: String): Flow<List<Label>>
     suspend fun refresh(accountId: String)
-    suspend fun create(accountId: String, name: String, color: String?, icon: String?)
+    suspend fun create(accountId: String, name: String, color: String?, icon: String?, applyInstruction: String)
     suspend fun update(accountId: String, label: Label)
     suspend fun delete(accountId: String, labelId: String)
 }
@@ -108,4 +118,10 @@ interface TemplateRepository {
     suspend fun refresh(accountId: String)
     suspend fun upsert(accountId: String, templateId: String?, name: String, subject: String, body: String)
     suspend fun delete(accountId: String, templateId: String)
+}
+
+interface ResourceRepository {
+    fun observeResources(accountId: String): Flow<List<Resource>>
+    suspend fun refresh(accountId: String, status: ResourceStatus? = null)
+    suspend fun setStatus(accountId: String, resourceId: String, status: ResourceStatus)
 }

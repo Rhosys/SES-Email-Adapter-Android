@@ -40,12 +40,17 @@ class ThreadRepositoryImpl(
     private val threadDao = db.threadDao()
     private val signalDao = db.signalDao()
 
-    override fun pagedThreads(accountId: String, status: ThreadStatus): Flow<PagingData<MailThread>> =
+    override fun pagedThreads(accountId: String, status: ThreadStatus?): Flow<PagingData<MailThread>> =
         Pager(
             config = PagingConfig(pageSize = 30, enablePlaceholders = false),
             remoteMediator = ThreadRemoteMediator(accountId, status, api, db),
-            pagingSourceFactory = { threadDao.pagingSource(accountId, status.wire) },
+            pagingSourceFactory = {
+                if (status == null) threadDao.pagingSourceAll(accountId) else threadDao.pagingSource(accountId, status.wire)
+            },
         ).flow.map { paging -> paging.map { it.toDomain() } }
+
+    override fun observeThreadCount(accountId: String, status: ThreadStatus): Flow<Int> =
+        threadDao.observeCountByStatus(accountId, status.wire)
 
     override fun observeThread(threadId: String): Flow<MailThread?> =
         threadDao.observeById(threadId).map { it?.toDomain() }
@@ -63,8 +68,8 @@ class ThreadRepositoryImpl(
     override fun search(accountId: String, query: String): Flow<List<MailThread>> =
         threadDao.search(accountId, query).map { rows -> rows.map { it.toDomain() } }
 
-    override suspend fun refreshThreads(accountId: String, status: ThreadStatus) {
-        val page = api.getThreads(accountId, status = status.wire)
+    override suspend fun refreshThreads(accountId: String, status: ThreadStatus?) {
+        val page = api.getThreads(accountId, status = status?.wire)
         threadDao.upsertAll(page.threads.map { it.toDomain(accountId).toEntity() })
     }
 

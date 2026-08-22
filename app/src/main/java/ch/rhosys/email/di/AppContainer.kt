@@ -15,6 +15,7 @@ import ch.rhosys.email.data.remote.api.UserAgentInterceptor
 import ch.rhosys.email.data.repository.AccountRepositoryImpl
 import ch.rhosys.email.data.repository.ComposeRepositoryImpl
 import ch.rhosys.email.data.repository.LabelRepositoryImpl
+import ch.rhosys.email.data.repository.ResourceRepositoryImpl
 import ch.rhosys.email.data.repository.RuleRepositoryImpl
 import ch.rhosys.email.data.repository.SettingsRepository
 import ch.rhosys.email.data.repository.StatsRepository
@@ -23,6 +24,7 @@ import ch.rhosys.email.data.repository.ThreadRepositoryImpl
 import ch.rhosys.email.domain.repository.AccountRepository
 import ch.rhosys.email.domain.repository.ComposeRepository
 import ch.rhosys.email.domain.repository.LabelRepository
+import ch.rhosys.email.domain.repository.ResourceRepository
 import ch.rhosys.email.domain.repository.RuleRepository
 import ch.rhosys.email.domain.repository.TemplateRepository
 import ch.rhosys.email.domain.repository.ThreadRepository
@@ -139,6 +141,8 @@ class AppContainer(private val context: Context) {
     val templateRepository: TemplateRepository by lazy {
         TemplateRepositoryImpl(apiService, database.templateDao())
     }
+
+    val resourceRepository: ResourceRepository by lazy { ResourceRepositoryImpl(apiService) }
 
     val settingsRepository: SettingsRepository by lazy { SettingsRepository(apiService) }
     val statsRepository: StatsRepository by lazy { StatsRepository(apiService) }
