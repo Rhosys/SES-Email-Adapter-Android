@@ -5,12 +5,9 @@ import ch.rhosys.email.BuildConfig
 import ch.rhosys.email.data.log.AppLogger
 import ch.rhosys.email.testutil.RedirectToMockServerInterceptor
 import io.mockk.Runs
-import io.mockk.captureNullable
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
-import io.mockk.secondArg
-import io.mockk.slot
 import okhttp3.Cookie
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
@@ -75,8 +72,9 @@ class FakeStorageBacking {
 
 fun mockStorage(backing: FakeStorageBacking): AuthStorageManager {
     val storage = mockk<AuthStorageManager>()
-    val stateSlot = slot<AuthStorageManager.PendingAuthentication?>()
-    every { storage.setAuthenticationRequest(captureNullable(stateSlot)) } answers { backing.pending = stateSlot.captured }
+    // any() matches a null argument too, so this covers both the "clear pending"
+    // and "set pending" calls without needing a capture matcher for a nullable type.
+    every { storage.setAuthenticationRequest(any()) } answers { backing.pending = firstArg() }
     every { storage.getAuthenticationRequest() } answers { backing.pending }
     every { storage.clear() } answers { backing.clearCalls++; backing.pending = null }
     return storage
