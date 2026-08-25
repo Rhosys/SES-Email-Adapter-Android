@@ -10,7 +10,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -364,12 +363,14 @@ class AuthressLoginClient(
 
     /**
      * The bearer token for API calls, read from the `authorization` cookie and
-     * checked against the issuer, as the SDK's getToken does.
+     * checked against the issuer and expiry, as the SDK's getToken does.
+     * [JwtManager.decode] already shortens `exp` by a 10s clock-skew buffer.
      */
     fun getToken(): String? {
         val token = cookieJar.authorizationCookie() ?: return null
         val payload = JwtManager.decode(token) ?: return null
         if (payload.optString("iss") != origin) return null
+        if (payload.has("exp") && payload.getLong("exp") * 1000 <= System.currentTimeMillis()) return null
         return token
     }
 
@@ -398,15 +399,24 @@ class AuthressLoginClient(
     }
 
     /**
-     * Waits until a bearer token is available, then returns it. Suspends until
-     * [authenticate] plus [completeAuthenticationRequest], or [userIsLoggedIn],
-     * establishes a session. This is the SDK's documented way to obtain the value
-     * for an Authorization header, and its one legitimate caller is
-     * [ch.rhosys.email.data.remote.api.AuthInterceptor] — the HTTP call wrapper
-     * grabbing a token right before an Email API request goes out. It must never
-     * be called from Authress's own client: a call like `POST /authentication` is
-     * what establishes the session, so waiting on its own result here would just
-     * deadlock until the timeout.
+     * Waits until a bearer token is available, then returns it. When the cached
+     * token is missing or expired, this actively revalidates via
+     * [userIsLoggedIn] (PATCH /session) rather than passively waiting for some
+     * other caller to refresh it — every HTTP/WebSocket call goes through this
+     * function, so this is the one choke point that makes an expired token get
+     * refreshed instead of reused. [userIsLoggedIn] itself no-ops (no network
+     * call) whenever a valid cached token already exists, so a burst of
+     * concurrent callers only pays for a PATCH /session while none of them has
+     * one yet.
+     *
+     * This is the SDK's documented way to obtain the value for an Authorization
+     * header, and its legitimate callers are
+     * [ch.rhosys.email.data.remote.api.AuthInterceptor] (grabbing a token right
+     * before an Email API request goes out) and
+     * [ch.rhosys.email.data.realtime.RealtimeClient] (attaching a token to the
+     * WebSocket handshake). It must never be called from Authress's own client:
+     * a call like `POST /authentication` is what establishes the session, so
+     * waiting on its own result here would just deadlock until the timeout.
      *
      * Returns null if no token arrives within [timeoutInMillis]; 0 means do not
      * wait at all, matching the SDK.
@@ -416,9 +426,7 @@ class AuthressLoginClient(
         if (timeoutInMillis == 0L) return null
 
         return withTimeoutOrNull(timeoutInMillis) {
-            // Resolved by completeAuthenticationRequest or a successful session check.
-            _sessionEstablished.first { it }
-            getToken()
+            if (userIsLoggedIn()) getToken() else null
         }
     }
 

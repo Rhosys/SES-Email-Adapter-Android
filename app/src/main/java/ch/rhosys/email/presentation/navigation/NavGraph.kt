@@ -73,8 +73,11 @@ private fun AppNavHost() {
     val container = LocalAppContainer.current
 
     // The login SDK recommends calling userIsLoggedIn on every route change: it
-    // is what revalidates the session and refreshes an expired token, via
-    // PATCH /session. Without it a stale bearer is sent until the app restarts.
+    // revalidates the session and refreshes an expired token via PATCH /session.
+    // AuthressLoginClient.waitForToken() now does this too right before any API/
+    // WebSocket call, so this isn't the only thing standing between a stale
+    // bearer and a request — but it keeps the session fresh proactively, ahead
+    // of whatever the next screen is about to need.
     val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
     LaunchedEffect(currentRoute) {
         container.authManager.userIsLoggedIn()
