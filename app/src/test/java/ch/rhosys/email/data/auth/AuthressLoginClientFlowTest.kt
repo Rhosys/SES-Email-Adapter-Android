@@ -7,7 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.setMain
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -82,7 +82,7 @@ class AuthressLoginClientFlowTest {
     // ── authenticate() ───────────────────────────────────────────────────
 
     @Test
-    fun `authenticate posts PKCE and anti-abuse fields, and ends at AwaitingRedirect`() = runTest {
+    fun `authenticate posts PKCE and anti-abuse fields, and ends at AwaitingRedirect`() = runBlocking {
         enqueueAuthenticationResponse("req-1")
 
         val result = client.authenticate()
@@ -107,7 +107,7 @@ class AuthressLoginClientFlowTest {
     }
 
     @Test
-    fun `authenticate includes every optional field when provided`() = runTest {
+    fun `authenticate includes every optional field when provided`() = runBlocking {
         enqueueAuthenticationResponse("req-1")
 
         client.authenticate(
@@ -137,7 +137,7 @@ class AuthressLoginClientFlowTest {
     }
 
     @Test
-    fun `authenticate surfaces a server failure from POST slash authentication`() = runTest {
+    fun `authenticate surfaces a server failure from POST slash authentication`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(500).setBody("server error"))
 
         val result = client.authenticate()
@@ -148,7 +148,7 @@ class AuthressLoginClientFlowTest {
     }
 
     @Test
-    fun `authenticate re-entering while a previous attempt is in flight abandons it`() = runTest {
+    fun `authenticate re-entering while a previous attempt is in flight abandons it`() = runBlocking {
         enqueueAuthenticationResponse("req-1")
         assertTrue(client.authenticate().isSuccess)
         assertEquals(AuthressLoginClient.AuthStatus.AwaitingRedirect, client.authStatus.value)
@@ -171,7 +171,7 @@ class AuthressLoginClientFlowTest {
     // ── completeAuthenticationRequest() ─────────────────────────────────
 
     @Test
-    fun `completeAuthenticationRequest exchanges the code and establishes a session`() = runTest {
+    fun `completeAuthenticationRequest exchanges the code and establishes a session`() = runBlocking {
         enqueueAuthenticationResponse("req-1")
         client.authenticate()
         val freshToken = testJwt(TEST_ORIGIN, secondsFromNow = 3600)
@@ -198,7 +198,7 @@ class AuthressLoginClientFlowTest {
     }
 
     @Test
-    fun `completeAuthenticationRequest fails when there is no pending request`() = runTest {
+    fun `completeAuthenticationRequest fails when there is no pending request`() = runBlocking {
         val redirect = Uri.parse("${ch.rhosys.email.BuildConfig.OAUTH_REDIRECT_URI}?code=abc&nonce=req-1")
 
         val result = client.completeAuthenticationRequest(redirect)
@@ -208,7 +208,7 @@ class AuthressLoginClientFlowTest {
     }
 
     @Test
-    fun `completeAuthenticationRequest fails on a genuine id mismatch`() = runTest {
+    fun `completeAuthenticationRequest fails on a genuine id mismatch`() = runBlocking {
         storageBacking.pending = AuthStorageManager.PendingAuthentication(
             codeVerifier = "verifier",
             authenticationRequestId = "req-A",
@@ -223,7 +223,7 @@ class AuthressLoginClientFlowTest {
     }
 
     @Test
-    fun `completeAuthenticationRequest assumes the sole pending request when the redirect carries no id`() = runTest {
+    fun `completeAuthenticationRequest assumes the sole pending request when the redirect carries no id`() = runBlocking {
         storageBacking.pending = AuthStorageManager.PendingAuthentication(
             codeVerifier = "verifier",
             authenticationRequestId = "req-C",
@@ -241,7 +241,7 @@ class AuthressLoginClientFlowTest {
     }
 
     @Test
-    fun `completeAuthenticationRequest treats a failed exchange as a harmless duplicate when already signed in`() = runTest {
+    fun `completeAuthenticationRequest treats a failed exchange as a harmless duplicate when already signed in`() = runBlocking {
         cookieBacking.cookies["authorization"] = testJwt(TEST_ORIGIN, secondsFromNow = 3600)
         storageBacking.pending = AuthStorageManager.PendingAuthentication(
             codeVerifier = "verifier",
@@ -260,7 +260,7 @@ class AuthressLoginClientFlowTest {
     }
 
     @Test
-    fun `completeAuthenticationRequest surfaces a failed exchange when not already signed in`() = runTest {
+    fun `completeAuthenticationRequest surfaces a failed exchange when not already signed in`() = runBlocking {
         storageBacking.pending = AuthStorageManager.PendingAuthentication(
             codeVerifier = "verifier",
             authenticationRequestId = "req-1",

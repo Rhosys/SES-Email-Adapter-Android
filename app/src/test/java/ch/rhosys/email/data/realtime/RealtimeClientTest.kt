@@ -45,7 +45,12 @@ class RealtimeClientTest {
 
     @After
     fun tearDown() {
-        server.shutdown()
+        // A WebSocket's close handshake (triggered by client.stop() in each test)
+        // is asynchronous; MockWebServer.shutdown() can throw IOException if it
+        // still sees that connection as open when called immediately after.
+        // Harmless here — the JVM tears down these sockets/threads regardless,
+        // and every test's own assertions already ran before this executes.
+        runCatching { server.shutdown() }
     }
 
     private fun wsBaseUrl(): String = server.url("/").toString().trimEnd('/')

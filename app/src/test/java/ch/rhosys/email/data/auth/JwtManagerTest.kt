@@ -1,7 +1,7 @@
 package ch.rhosys.email.data.auth
 
 import ch.rhosys.email.testutil.testJwt
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -82,7 +82,7 @@ class JwtManagerTest {
     }
 
     @Test
-    fun `calculateAntiAbuseHash produces the v2 format with a hash starting 00`() = runTest {
+    fun `calculateAntiAbuseHash produces the v2 format with a hash starting 00`() = runBlocking {
         val hash = JwtManager.calculateAntiAbuseHash(linkedMapOf("applicationId" to "app-1"))
         val parts = hash.split(";")
         assertEquals(4, parts.size)
@@ -93,7 +93,7 @@ class JwtManagerTest {
     }
 
     @Test
-    fun `calculateAntiAbuseHash ignores null, empty-string and false values`() = runTest {
+    fun `calculateAntiAbuseHash ignores null, empty-string and false values`() = runBlocking {
         // Sanity check that it doesn't throw and still produces a valid hash
         // when most props are absent, mirroring authenticate()'s default options.
         val hash = JwtManager.calculateAntiAbuseHash(

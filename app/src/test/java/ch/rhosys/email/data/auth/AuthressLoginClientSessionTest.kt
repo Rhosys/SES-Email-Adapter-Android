@@ -6,7 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.setMain
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -63,7 +63,7 @@ class AuthressLoginClientSessionTest {
     // ── logout() ─────────────────────────────────────────────────────────
 
     @Test
-    fun `logout deletes the server session and clears local state`() = runTest {
+    fun `logout deletes the server session and clears local state`() = runBlocking {
         signIn()
         server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
 
@@ -80,7 +80,7 @@ class AuthressLoginClientSessionTest {
     }
 
     @Test
-    fun `logout still clears local state when the server delete call fails`() = runTest {
+    fun `logout still clears local state when the server delete call fails`() = runBlocking {
         signIn()
         server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
 
@@ -92,7 +92,7 @@ class AuthressLoginClientSessionTest {
     }
 
     @Test
-    fun `logout still clears local state when the server is unreachable`() = runTest {
+    fun `logout still clears local state when the server is unreachable`() = runBlocking {
         signIn()
         server.shutdown()
 
@@ -106,7 +106,7 @@ class AuthressLoginClientSessionTest {
     // ── linkIdentity() ───────────────────────────────────────────────────
 
     @Test
-    fun `linkIdentity fails when neither connectionId nor tenantLookupIdentifier is given`() = runTest {
+    fun `linkIdentity fails when neither connectionId nor tenantLookupIdentifier is given`() = runBlocking {
         signIn()
 
         val result = client.linkIdentity()
@@ -116,7 +116,7 @@ class AuthressLoginClientSessionTest {
     }
 
     @Test
-    fun `linkIdentity fails when not signed in`() = runTest {
+    fun `linkIdentity fails when not signed in`() = runBlocking {
         val result = client.linkIdentity(connectionId = "conn-1")
 
         assertTrue(result.isFailure)
@@ -124,7 +124,7 @@ class AuthressLoginClientSessionTest {
     }
 
     @Test
-    fun `linkIdentity posts linkIdentity true and stores the new pending request`() = runTest {
+    fun `linkIdentity posts linkIdentity true and stores the new pending request`() = runBlocking {
         signIn()
         server.enqueue(
             MockResponse().setResponseCode(200).setBody(
@@ -150,7 +150,7 @@ class AuthressLoginClientSessionTest {
     // ── getUserProfile() ─────────────────────────────────────────────────
 
     @Test
-    fun `getUserProfile fails when not signed in`() = runTest {
+    fun `getUserProfile fails when not signed in`() = runBlocking {
         val result = client.getUserProfile()
 
         assertTrue(result.isFailure)
@@ -158,7 +158,7 @@ class AuthressLoginClientSessionTest {
     }
 
     @Test
-    fun `getUserProfile returns the profile payload when signed in`() = runTest {
+    fun `getUserProfile returns the profile payload when signed in`() = runBlocking {
         signIn()
         server.enqueue(MockResponse().setResponseCode(200).setBody("""{"name":"Alex"}"""))
 
@@ -172,7 +172,7 @@ class AuthressLoginClientSessionTest {
     // ── getDevices() ─────────────────────────────────────────────────────
 
     @Test
-    fun `getDevices returns empty without a network call when not signed in`() = runTest {
+    fun `getDevices returns empty without a network call when not signed in`() = runBlocking {
         val result = client.getDevices()
 
         assertTrue(result.isSuccess)
@@ -181,7 +181,7 @@ class AuthressLoginClientSessionTest {
     }
 
     @Test
-    fun `getDevices returns empty on a 401`() = runTest {
+    fun `getDevices returns empty on a 401`() = runBlocking {
         signIn()
         server.enqueue(MockResponse().setResponseCode(401))
 
@@ -192,7 +192,7 @@ class AuthressLoginClientSessionTest {
     }
 
     @Test
-    fun `getDevices returns empty on a 404`() = runTest {
+    fun `getDevices returns empty on a 404`() = runBlocking {
         signIn()
         server.enqueue(MockResponse().setResponseCode(404))
 
@@ -203,7 +203,7 @@ class AuthressLoginClientSessionTest {
     }
 
     @Test
-    fun `getDevices surfaces a genuine server error`() = runTest {
+    fun `getDevices surfaces a genuine server error`() = runBlocking {
         signIn()
         server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
 
@@ -213,7 +213,7 @@ class AuthressLoginClientSessionTest {
     }
 
     @Test
-    fun `getDevices parses the device list on success`() = runTest {
+    fun `getDevices parses the device list on success`() = runBlocking {
         signIn()
         val devices = JSONArray()
             .put(JSONObject().put("deviceId", "dev-1").put("name", "Pixel"))
@@ -234,7 +234,7 @@ class AuthressLoginClientSessionTest {
     // ── deleteDevice() ───────────────────────────────────────────────────
 
     @Test
-    fun `deleteDevice calls the device-scoped delete endpoint`() = runTest {
+    fun `deleteDevice calls the device-scoped delete endpoint`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
 
         val result = client.deleteDevice("dev-1")
@@ -246,7 +246,7 @@ class AuthressLoginClientSessionTest {
     }
 
     @Test
-    fun `deleteDevice surfaces a server failure`() = runTest {
+    fun `deleteDevice surfaces a server failure`() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
 
         val result = client.deleteDevice("dev-1")

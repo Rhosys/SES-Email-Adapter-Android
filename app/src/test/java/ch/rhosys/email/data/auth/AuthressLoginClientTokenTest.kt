@@ -6,7 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.setMain
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -136,7 +136,7 @@ class AuthressLoginClientTokenTest {
     // ── userIsLoggedIn() ─────────────────────────────────────────────────
 
     @Test
-    fun `userIsLoggedIn returns true without a network call when a valid token is cached`() = runTest {
+    fun `userIsLoggedIn returns true without a network call when a valid token is cached`() = runBlocking {
         cookieBacking.cookies["authorization"] = testJwt(TEST_ORIGIN, secondsFromNow = 3600)
 
         assertTrue(client.userIsLoggedIn())
@@ -145,7 +145,7 @@ class AuthressLoginClientTokenTest {
     }
 
     @Test
-    fun `userIsLoggedIn refreshes via PATCH slash session when the cached token is expired`() = runTest {
+    fun `userIsLoggedIn refreshes via PATCH slash session when the cached token is expired`() = runBlocking {
         cookieBacking.cookies["authorization"] = testJwt(TEST_ORIGIN, secondsFromNow = -60)
         val freshToken = testJwt(TEST_ORIGIN, secondsFromNow = 3600)
         server.enqueue(
@@ -166,7 +166,7 @@ class AuthressLoginClientTokenTest {
     }
 
     @Test
-    fun `userIsLoggedIn refreshes when there is no cookie at all yet`() = runTest {
+    fun `userIsLoggedIn refreshes when there is no cookie at all yet`() = runBlocking {
         val freshToken = testJwt(TEST_ORIGIN, secondsFromNow = 3600)
         server.enqueue(
             MockResponse()
@@ -180,7 +180,7 @@ class AuthressLoginClientTokenTest {
     }
 
     @Test
-    fun `userIsLoggedIn returns false when the server rejects the refresh`() = runTest {
+    fun `userIsLoggedIn returns false when the server rejects the refresh`() = runBlocking {
         cookieBacking.cookies["authorization"] = testJwt(TEST_ORIGIN, secondsFromNow = -60)
         server.enqueue(MockResponse().setResponseCode(401).setBody("{\"error\":\"invalid session\"}"))
 
@@ -190,7 +190,7 @@ class AuthressLoginClientTokenTest {
     }
 
     @Test
-    fun `userIsLoggedIn returns false on a 500 from session refresh`() = runTest {
+    fun `userIsLoggedIn returns false on a 500 from session refresh`() = runBlocking {
         cookieBacking.cookies["authorization"] = testJwt(TEST_ORIGIN, secondsFromNow = -60)
         server.enqueue(MockResponse().setResponseCode(500).setBody("boom"))
 
@@ -198,7 +198,7 @@ class AuthressLoginClientTokenTest {
     }
 
     @Test
-    fun `userIsLoggedIn returns false on a network failure talking to the server`() = runTest {
+    fun `userIsLoggedIn returns false on a network failure talking to the server`() = runBlocking {
         cookieBacking.cookies["authorization"] = testJwt(TEST_ORIGIN, secondsFromNow = -60)
         server.shutdown()
 
@@ -206,7 +206,7 @@ class AuthressLoginClientTokenTest {
     }
 
     @Test
-    fun `userIsLoggedIn returns false when the refresh succeeds but the new cookie is still expired`() = runTest {
+    fun `userIsLoggedIn returns false when the refresh succeeds but the new cookie is still expired`() = runBlocking {
         // Pathological but should not be reported as logged in: the server
         // handed back a cookie that is already expired by our clock.
         cookieBacking.cookies["authorization"] = testJwt(TEST_ORIGIN, secondsFromNow = -60)
@@ -224,7 +224,7 @@ class AuthressLoginClientTokenTest {
     // ── waitForToken() ───────────────────────────────────────────────────
 
     @Test
-    fun `waitForToken returns the cached token immediately without a network call`() = runTest {
+    fun `waitForToken returns the cached token immediately without a network call`() = runBlocking {
         val token = testJwt(TEST_ORIGIN, secondsFromNow = 3600)
         cookieBacking.cookies["authorization"] = token
 
@@ -233,7 +233,7 @@ class AuthressLoginClientTokenTest {
     }
 
     @Test
-    fun `waitForToken with a zero timeout returns null immediately without refreshing`() = runTest {
+    fun `waitForToken with a zero timeout returns null immediately without refreshing`() = runBlocking {
         cookieBacking.cookies["authorization"] = testJwt(TEST_ORIGIN, secondsFromNow = -60)
 
         assertNull(client.waitForToken(timeoutInMillis = 0))
@@ -241,7 +241,7 @@ class AuthressLoginClientTokenTest {
     }
 
     @Test
-    fun `waitForToken refreshes an expired token and returns the new one`() = runTest {
+    fun `waitForToken refreshes an expired token and returns the new one`() = runBlocking {
         cookieBacking.cookies["authorization"] = testJwt(TEST_ORIGIN, secondsFromNow = -60)
         val freshToken = testJwt(TEST_ORIGIN, secondsFromNow = 3600)
         server.enqueue(
@@ -255,7 +255,7 @@ class AuthressLoginClientTokenTest {
     }
 
     @Test
-    fun `waitForToken returns null promptly when the refresh is rejected, without waiting out the full timeout`() = runTest {
+    fun `waitForToken returns null promptly when the refresh is rejected, without waiting out the full timeout`() = runBlocking {
         cookieBacking.cookies["authorization"] = testJwt(TEST_ORIGIN, secondsFromNow = -60)
         server.enqueue(MockResponse().setResponseCode(401))
 
@@ -268,7 +268,7 @@ class AuthressLoginClientTokenTest {
     }
 
     @Test
-    fun `waitForToken on a hung server fails within OkHttp's own read timeout, bounding wall time`() = runTest {
+    fun `waitForToken on a hung server fails within OkHttp's own read timeout, bounding wall time`() = runBlocking {
         // withTimeoutOrNull cannot interrupt a synchronous OkHttp Call.execute()
         // mid-flight, so what actually bounds a hung PATCH /session here is the
         // client's own read timeout, not waitForToken's timeoutInMillis. This
