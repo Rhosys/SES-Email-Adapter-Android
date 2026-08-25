@@ -52,6 +52,8 @@ class AuthressLoginClient(
     private val cookieJar: AuthressCookieJar,
     httpClient: OkHttpClient,
     private val logger: AppLogger,
+    /** Injectable like [cookieJar], so tests can substitute a fake instead of touching EncryptedSharedPreferences. */
+    private val storage: AuthStorageManager = AuthStorageManager(context),
 ) {
     /** The SDK's HttpClient appends /api to the origin; every path below is relative to it. */
     private val loginUrl = "https://${BuildConfig.AUTHRESS_CUSTOM_DOMAIN}/api"
@@ -59,8 +61,6 @@ class AuthressLoginClient(
     private val origin = "https://${BuildConfig.AUTHRESS_CUSTOM_DOMAIN}"
 
     private val redirectUri = BuildConfig.OAUTH_REDIRECT_URI
-
-    private val storage = AuthStorageManager(context)
 
     /** The Authress calls carry the session cookie and must not carry our API bearer. */
     private val http = httpClient.newBuilder().cookieJar(cookieJar).build()

@@ -161,6 +161,9 @@ dependencies {
     testImplementation(libs.junit5.jupiter)
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.mockwebserver)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.androidx.espresso.core)
