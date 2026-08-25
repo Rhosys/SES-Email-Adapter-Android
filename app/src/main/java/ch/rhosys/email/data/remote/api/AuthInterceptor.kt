@@ -5,14 +5,15 @@ import okhttp3.Interceptor
 import okhttp3.Response
 
 /**
- * Attaches the Authress session token to Email API calls — the one place that
- * should ever call [ch.rhosys.email.data.auth.AuthressLoginClient.waitForToken]:
- * this is the HTTP call wrapper, grabbing the token right before the request
- * that needs it. It returns immediately when a token is already cached, and
- * otherwise waits briefly for one being established rather than firing a
- * request that's certain to be rejected — e.g. a token that expired between
- * route changes, while [AppNavHost][ch.rhosys.email.presentation.navigation.AppNavHost]'s
- * `userIsLoggedIn()` refresh is still in flight.
+ * Attaches the Authress session token to Email API calls — the HTTP call
+ * wrapper that grabs the token right before the request that needs it, via
+ * [ch.rhosys.email.data.auth.AuthressLoginClient.waitForToken]. (The Email
+ * API's WebSocket, [ch.rhosys.email.data.realtime.RealtimeClient], is the
+ * other legitimate caller, attaching a token to the connection handshake the
+ * same way.) It returns immediately when a token is already cached, and
+ * otherwise actively revalidates the session — e.g. a token that expired
+ * between route changes — rather than firing a request that's certain to be
+ * rejected.
  *
  * `runBlocking` is safe here — OkHttp interceptors run on OkHttp's own
  * dispatcher, never the main thread. It only stays safe because this
