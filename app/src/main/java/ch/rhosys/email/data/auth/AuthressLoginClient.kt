@@ -374,8 +374,6 @@ class AuthressLoginClient(
         return token
     }
 
-    val isSignedIn: Boolean get() = getToken() != null
-
     /** The identity token's claims, for showing who is signed in. */
     fun getUserIdentity(): JSONObject? {
         val payload = JwtManager.decode(cookieJar.userCookie()) ?: return null

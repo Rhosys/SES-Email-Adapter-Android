@@ -7,6 +7,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -32,6 +33,7 @@ import ch.rhosys.email.presentation.stats.StatsScreen
 import ch.rhosys.email.presentation.templates.TemplatesScreen
 import ch.rhosys.email.presentation.thread.ThreadScreen
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 private enum class RootGate { LOADING, ONBOARDING, LOGIN, APP }
 
@@ -39,12 +41,13 @@ private enum class RootGate { LOADING, ONBOARDING, LOGIN, APP }
 fun RootNavGraph() {
     val container = LocalAppContainer.current
     var gate by remember { mutableStateOf(RootGate.LOADING) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         val onboarded = container.preferencesStore.hasCompletedOnboarding.first()
         gate = when {
             !onboarded -> RootGate.ONBOARDING
-            !container.authManager.isSignedIn -> RootGate.LOGIN
+            !container.authManager.userIsLoggedIn() -> RootGate.LOGIN
             else -> RootGate.APP
         }
     }
@@ -53,7 +56,9 @@ fun RootNavGraph() {
         RootGate.LOADING -> CircularProgressIndicator()
         RootGate.ONBOARDING -> DebugLogOverlay(container.appLogger) {
             OnboardingScreen(onFinished = {
-                gate = if (container.authManager.isSignedIn) RootGate.APP else RootGate.LOGIN
+                scope.launch {
+                    gate = if (container.authManager.userIsLoggedIn()) RootGate.APP else RootGate.LOGIN
+                }
             })
         }
         RootGate.LOGIN -> DebugLogOverlay(container.appLogger) {
