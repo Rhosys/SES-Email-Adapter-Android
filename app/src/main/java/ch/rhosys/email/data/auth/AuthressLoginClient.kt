@@ -569,14 +569,35 @@ class AuthressLoginClient(
             val elapsedMs = System.currentTimeMillis() - startedAt
             val text = it.body?.string().orEmpty()
             if (!it.isSuccessful) {
-                logger.warn("Authress", "<- ${request.method} ${request.url.encodedPath} failed: ${it.code} in ${elapsedMs}ms $text")
+                // The URL and response body alone aren't enough to diagnose most
+                // Authress failures (e.g. a rejected antiAbuseHash or a malformed
+                // field) — the request headers and body sent are what's actually
+                // under suspicion, so include them too. `request` here is the
+                // pre-CookieJar Request this client built, so it never carries the
+                // session Cookie header that OkHttp's cookie jar adds later.
+                val requestHeaders = request.headers.joinToString("; ") { (name, value) -> "$name=$value" }
+                val requestBody = request.bodyText()
+                val detail = "request headers: $requestHeaders\nrequest body: $requestBody\nresponse body: $text"
+                logger.warn("Authress", "<- ${request.method} ${request.url.encodedPath} failed: ${it.code} in ${elapsedMs}ms\n$detail")
                 throw AuthressException(
-                    "Authress ${request.method} ${request.url.encodedPath} failed: ${it.code} $text",
+                    "Authress ${request.method} ${request.url.encodedPath} failed: ${it.code}\n$detail",
                     status = it.code,
                 )
             }
             logger.info("Authress", "<- ${request.method} ${request.url.encodedPath} ${it.code} in ${elapsedMs}ms")
             runCatching { JSONObject(text) }.getOrDefault(JSONObject())
+        }
+    }
+
+    /** Reads the request body without consuming it — RequestBody.writeTo() can be called repeatedly on OkHttp's buffer-backed bodies. */
+    private fun Request.bodyText(): String {
+        val requestBody = body ?: return ""
+        return try {
+            val buffer = okio.Buffer()
+            requestBody.writeTo(buffer)
+            buffer.readUtf8()
+        } catch (e: IOException) {
+            "<unavailable: ${e.message}>"
         }
     }
 
