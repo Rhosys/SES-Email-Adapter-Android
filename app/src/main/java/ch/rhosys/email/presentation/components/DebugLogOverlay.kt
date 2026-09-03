@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Settings
@@ -112,15 +113,19 @@ private fun LogPanel(logs: List<LogEntryEntity>, onClose: () -> Unit, onClear: (
             } else {
                 // logs is newest-first (id DESC); reverseLayout renders index 0 at the
                 // bottom, so the panel opens already scrolled to the most recent entry.
-                LazyColumn(reverseLayout = true, modifier = Modifier.fillMaxWidth()) {
-                    items(logs, key = { it.id }) { entry ->
-                        Text(
-                            text = entry.toLogLine(),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            color = entry.levelColor(),
-                            modifier = Modifier.padding(vertical = 2.dp),
-                        )
+                // SelectionContainer lets a user drag- or long-press-select text out of
+                // the panel directly, rather than only via the bulk "Copy" button above.
+                SelectionContainer {
+                    LazyColumn(reverseLayout = true, modifier = Modifier.fillMaxWidth()) {
+                        items(logs, key = { it.id }) { entry ->
+                            Text(
+                                text = entry.toLogLine(),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = entry.levelColor(),
+                                modifier = Modifier.padding(vertical = 2.dp),
+                            )
+                        }
                     }
                 }
             }
