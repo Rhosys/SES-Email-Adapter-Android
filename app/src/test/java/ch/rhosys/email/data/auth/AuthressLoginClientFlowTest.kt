@@ -130,7 +130,7 @@ class AuthressLoginClientFlowTest {
         assertEquals("invite-1", body.getString("inviteId"))
         assertEquals("somewhere", body.getString("responseLocation"))
         assertEquals("flow-x", body.getString("flowType"))
-        assertEquals(2, body.getJSONArray("scopes").length())
+        assertEquals(2, body.getJSONArray("requestedScopes").length())
         assertEquals(1, body.getJSONArray("audiences").length())
         assertEquals("v", body.getJSONObject("connectionProperties").getString("k"))
         assertTrue(body.getBoolean("multiAccount"))

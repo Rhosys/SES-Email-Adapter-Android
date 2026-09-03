@@ -198,7 +198,7 @@ class AuthressLoginClient(
                 options.inviteId?.let { put("inviteId", it) }
                 options.responseLocation?.let { put("responseLocation", it) }
                 options.flowType?.let { put("flowType", it) }
-                options.scopes?.let { put("scopes", JSONArray(it)) }
+                options.scopes?.let { put("requestedScopes", JSONArray(it)) }
                 options.audiences?.let { put("audiences", JSONArray(it)) }
                 options.connectionProperties?.let { put("connectionProperties", JSONObject(it)) }
                 options.multiAccount?.let { put("multiAccount", it) }
