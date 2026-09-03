@@ -206,6 +206,15 @@ async function diagnoseError(err: unknown, client: PublisherClient): Promise<nev
       process.exit(1);
     }
 
+    if (msg.toLowerCase().includes('target sdk')) {
+      process.stderr.write(`Root cause: the AAB's targetSdkVersion no longer meets Play's minimum.\n\n`);
+      process.stderr.write(`Fix: bump targetSdk (and compileSdk) in app/build.gradle.kts to the\n`);
+      process.stderr.write(`current required API level, then rebuild the AAB before retrying.\n`);
+      process.stderr.write(`This is not a service account permissions issue — ignore the\n`);
+      process.stderr.write(`"Release Manager" guidance below.\n`);
+      process.exit(1);
+    }
+
     if (msg.includes('does not have permission') || msg.includes('forbidden')) {
       process.stderr.write(`Root cause: Play Console has not granted this app to the service account.\n\n`);
       process.stderr.write(`Fix: Go to Play Console → Users and permissions → select the service account\n`);

@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "ch.rhosys.email.wear"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "ch.rhosys.email.wear"
         minSdk = 30
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
     }

@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "ch.rhosys.email"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "ch.rhosys.email"
         minSdk = 31
-        targetSdk = 35
+        targetSdk = 36
         versionCode = (findProperty("versionCode") as? String)?.toIntOrNull() ?: 1
         versionName = (findProperty("versionName") as? String) ?: "1.0.0"
 
