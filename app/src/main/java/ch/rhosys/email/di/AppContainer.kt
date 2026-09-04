@@ -58,7 +58,7 @@ class AppContainer(private val context: Context) {
     }
 
     val authManager: AuthressLoginClient by lazy {
-        AuthressLoginClient(context, cookieJar, authHttpClient, appLogger)
+        AuthressLoginClient(context, cookieJar, authHttpClient, appLogger, requestOrigin = "ch.rhosys.email://auth")
     }
 
     private val moshi: Moshi by lazy {

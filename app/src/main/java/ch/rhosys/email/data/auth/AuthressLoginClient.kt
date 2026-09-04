@@ -52,6 +52,8 @@ class AuthressLoginClient(
     private val cookieJar: AuthressCookieJar,
     httpClient: OkHttpClient,
     private val logger: AppLogger,
+    /** Sent as the `Origin` header on every request to Authress; also the app's deep-link scheme, e.g. "ch.rhosys.email://auth". Required — Authress rejects requests that omit it. */
+    private val requestOrigin: String,
     /** Injectable like [cookieJar], so tests can substitute a fake instead of touching EncryptedSharedPreferences. */
     private val storage: AuthStorageManager = AuthStorageManager(context),
 ) {
@@ -552,6 +554,7 @@ class AuthressLoginClient(
         val request = builder
             .header("Content-Type", "application/json")
             .header("X-Powered-By", "Authress Login SDK; Android; ${BuildConfig.VERSION_NAME}")
+            .header("Origin", requestOrigin)
             .build()
 
         val startedAt = System.currentTimeMillis()

@@ -104,7 +104,7 @@ fun testAuthressLoginClient(
         .connectTimeout(readTimeoutMillis, TimeUnit.MILLISECONDS)
         .readTimeout(readTimeoutMillis, TimeUnit.MILLISECONDS)
         .build()
-    return AuthressLoginClient(context, cookieJar, httpClient, logger, storage)
+    return AuthressLoginClient(context, cookieJar, httpClient, logger, requestOrigin = "ch.rhosys.email://auth", storage = storage)
 }
 
 fun MockWebServer.baseUrl(): HttpUrl = url("/")
