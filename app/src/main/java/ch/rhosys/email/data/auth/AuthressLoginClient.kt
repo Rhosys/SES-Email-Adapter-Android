@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -115,6 +117,22 @@ class AuthressLoginClient(
      * surfacing "Authentication request mismatch" to the user.
      */
     private var abandonedAuthenticationRequestId: String? = null
+
+    /**
+     * Guards the two calls that establish/validate the server session —
+     * [completeAuthenticationRequest]'s token exchange and [userIsLoggedIn]'s
+     * `PATCH /session` — so they never race on the wire. Seen in production:
+     * `userIsLoggedIn()` (triggered by, e.g., [RealtimeClient] on app resume)
+     * fired `PATCH /session` a few ms before the redirect's token exchange
+     * started; both landed on Authress around the same time and the exchange
+     * came back "the authorization code is not valid" even though the code
+     * itself was fine. Authress apparently treats concurrent session-mutating
+     * calls from the same client as mutually corrupting, so the fix is to
+     * serialize them rather than rely on an in-memory status check (which can
+     * itself lose the race, since it's set after the redirect is received but
+     * `userIsLoggedIn()` can fire before that).
+     */
+    private val sessionMutex = Mutex()
 
     init {
         // The SDK restores cookies from encrypted storage in its constructor,
@@ -240,6 +258,14 @@ class AuthressLoginClient(
      * not a guess) — otherwise it's a real failure and is surfaced as such.
      */
     suspend fun completeAuthenticationRequest(uri: Uri): Result<Unit> = runCatching {
+        sessionMutex.withLock { completeAuthenticationRequestLocked(uri) }
+    }.onFailure {
+        logger.error("Authress", "completeAuthenticationRequest() failed", it)
+        _authStatus.value = AuthStatus.Idle
+        _authError.value = it.message
+    }
+
+    private suspend fun completeAuthenticationRequestLocked(uri: Uri) {
         val flowStartedAt = System.currentTimeMillis()
         val code = uri.getQueryParameter("code").orEmpty()
         val authenticationRequestId = uri.getQueryParameter("nonce").orEmpty()
@@ -255,7 +281,7 @@ class AuthressLoginClient(
             // it without touching _authStatus, which belongs to whatever attempt is
             // actually current.
             logger.info("Authress", "ignoring redirect for abandoned authenticationRequestId=$authenticationRequestId")
-            return@runCatching
+            return
         }
 
         _authStatus.value = AuthStatus.VerifyingRedirect
@@ -328,7 +354,7 @@ class AuthressLoginClient(
                 storage.setAuthenticationRequest(null)
                 _sessionEstablished.value = true
                 _authStatus.value = AuthStatus.Idle
-                return@runCatching
+                return
             }
             throw e
         }
@@ -338,10 +364,6 @@ class AuthressLoginClient(
         _sessionEstablished.value = getToken() != null
         _authStatus.value = AuthStatus.Idle
         logger.info("Authress", "session established, ${System.currentTimeMillis() - flowStartedAt}ms since redirect received")
-    }.onFailure {
-        logger.error("Authress", "completeAuthenticationRequest() failed", it)
-        _authStatus.value = AuthStatus.Idle
-        _authError.value = it.message
     }
 
     /** True when the redirect belongs to this client. */
@@ -389,13 +411,18 @@ class AuthressLoginClient(
      */
     suspend fun userIsLoggedIn(): Boolean {
         if (getToken() != null) return true
-        logger.info("Authress", "userIsLoggedIn() found no cached token, refreshing via PATCH /session")
-        return runCatching {
-            patch("/session", JSONObject())
-            val loggedIn = getToken() != null
-            if (loggedIn) cookieJar.backupCookies()
-            loggedIn.also { _sessionEstablished.value = it }
-        }.getOrDefault(false)
+        return sessionMutex.withLock {
+            // Re-check: completeAuthenticationRequest() may have been holding the
+            // lock and already established a session while we were waiting for it.
+            if (getToken() != null) return@withLock true
+            logger.info("Authress", "userIsLoggedIn() found no cached token, refreshing via PATCH /session")
+            runCatching {
+                patch("/session", JSONObject())
+                val loggedIn = getToken() != null
+                if (loggedIn) cookieJar.backupCookies()
+                loggedIn.also { _sessionEstablished.value = it }
+            }.getOrDefault(false)
+        }
     }
 
     /**
