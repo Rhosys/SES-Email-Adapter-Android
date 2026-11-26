@@ -1,5 +1,6 @@
 package ch.rhosys.email.presentation.thread
 
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -44,7 +45,9 @@ import ch.rhosys.email.di.LocalAppContainer
 import androidx.compose.ui.platform.LocalUriHandler
 import ch.rhosys.email.domain.model.Attachment
 import ch.rhosys.email.domain.model.Signal
+import ch.rhosys.email.presentation.components.EmailHtmlView
 import ch.rhosys.email.presentation.components.MarkdownText
+import ch.rhosys.email.presentation.components.looksLikeHtmlDocument
 import ch.rhosys.email.presentation.components.rememberViewModel
 import java.text.DateFormat
 import java.util.Date
@@ -116,6 +119,7 @@ fun ThreadScreen(accountId: String, threadId: String, onBack: () -> Unit, onRepl
                         expanded = signal.signalId in uiState.expandedSignalIds,
                         onToggle = { viewModel.toggleExpanded(signal.signalId) },
                         onOpenAttachment = { att -> att.url?.let { runCatching { uriHandler.openUri(it) } } },
+                        onOpenLink = { uri -> runCatching { uriHandler.openUri(uri.toString()) } },
                     )
                 }
             }
@@ -259,6 +263,7 @@ private fun SignalCard(
     expanded: Boolean,
     onToggle: () -> Unit,
     onOpenAttachment: (Attachment) -> Unit,
+    onOpenLink: (Uri) -> Unit,
 ) {
     val sender = when (signal) {
         is Signal.InboundEmail -> signal.from.display
@@ -293,7 +298,15 @@ private fun SignalCard(
                 Text("Draft", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
             if (expanded) {
-                MarkdownText(body, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                if (looksLikeHtmlDocument(body)) {
+                    EmailHtmlView(
+                        html = body,
+                        onOpenLink = onOpenLink,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    )
+                } else {
+                    MarkdownText(body, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                }
                 attachments.forEach { attachment ->
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
